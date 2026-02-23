@@ -1,0 +1,30 @@
+1. Physical Connections (Assumed)
+The code assumes the PN532 is connected via I2C to the following pins:
+
+SDA: GPIO 8
+SCL: GPIO 10
+Power: 3.3V or 5V (depending on your module)
+GND: GND
+
+1. Code Implementation
+
+Initialization: The PN532 is initialized in
+setup()
+. It checks the firmware version to confirm communication.
+Scanning: In the
+loop()
+ function, the system now checks for NFC tags every 100ms (non-blocking).
+Feedback: When a tag is detected, the UID is printed to the Serial monitor and displayed on the OLED for 2 seconds.
+Battery Monitoring
+I've added monitoring for a LiPo battery using a 1/2 voltage divider on GPIO 2.
+
+Calculus: The code reads the ADC value (0-2100mV on the pino) and maps it to a percentage (1500mV - 2100mV -> 0% - 100%).
+OLED Display: The battery percentage is displayed in the top-right corner of the main screen as Bat: X%.
+Empty State: If no battery is connected, it will show Bat: 0%.
+How to Verify (NFC & Battery)
+Compile and Upload: Run pio run -t upload.
+Monitor Serial: pio device monitor.
+Check OLED:
+Verify PN532 OK! at startup.
+Verify Bat: 0% (if no battery) or the correct percentage in the top-right.
+Test NFC: Scan a tag and verify the UID appears.

@@ -1,0 +1,306 @@
+#include <Arduino.h>
+#include <U8g2lib.h>
+#include <Wire.h>
+
+// Configuração para OLED 1.3" (geralmente SH1106)
+// Se o seu display for SSD1306, mude SH1106 para SSD1306
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
+
+#define SDA_PIN 8
+#define SCL_PIN 10
+#define BTN1 1
+#define BTN2 6
+#define BTN3 9
+
+#include <ArduinoJson.h>
+#include <HTTPClient.h>
+#include <WiFi.h>
+
+// WiFi Credentials - PLACEHOLDERS
+const char *ssid = "Vodafone-428F66 2,4G";
+const char *password = "yQQA3Af3GY";
+
+// Supabase Credentials - PLACEHOLDERS
+const char *supabase_url = "https://zxjwkvepgqfgkajhuyaf.supabase.co";
+const char *supabase_key =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS"
+    "IsInJlZiI6Inp4andrdmVwZ3FmZ2thamh1eWFmIiwicm9sZSI6ImFub24iLC"
+    "JpYXQiOjE3Njk4OTM0NzUsImV4cCI6MjA4NTQ2OTQ3NX0._"
+    "kYCojqYUn7SrAfausdkgqfirTlYLtj3hdEae2jMmFM";
+
+#include <time.h>
+
+int lastPressed = -1;
+
+unsigned long lastActivityTime = 0;
+const unsigned long sleepTimeout = 10000; // 10 segundos
+
+// Configuração NTP
+const char *ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 0; // UTC
+const int daylightOffset_sec = 0;
+
+void goToSleep() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0, 10, "Entrando em Sleep...");
+  u8g2.drawStr(0, 30, "Acorde pelo G1");
+  u8g2.sendBuffer();
+  delay(1000);
+  u8g2.setPowerSave(1); // Desliga o display para economizar energia
+
+  // Configura despertar por GPIO 1 (LOW level)
+  // No ESP32-C3 usa-se esp_deep_sleep_enable_gpio_wakeup
+  esp_deep_sleep_enable_gpio_wakeup(1ULL << BTN1, ESP_GPIO_WAKEUP_GPIO_LOW);
+
+  Serial.println("Indo para Deep Sleep agora...");
+  Serial.flush();
+  esp_deep_sleep_start();
+}
+
+// Retorna a hora formatada HH:MM:SS
+String getFormattedTime() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    return "--:--:--";
+  }
+  char timeStr[10];
+  strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+  return String(timeStr);
+}
+
+void initWiFi() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0, 10, "Conectando WiFi...");
+  u8g2.sendBuffer();
+
+  Serial.println("\nConectando ao WiFi...");
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true, true);
+  delay(1000);
+
+  WiFi.begin(ssid, password);
+
+  // Mantemos a estabilidade de potencia que funcionou
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+
+  int counter = 0;
+  while (WiFi.status() != WL_CONNECTED && counter < 40) {
+    delay(500);
+    Serial.print(".");
+    counter++;
+  }
+
+  u8g2.clearBuffer();
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFi.setSleep(false);
+    u8g2.drawStr(0, 10, "WiFi Online!");
+    u8g2.drawStr(0, 30, WiFi.localIP().toString().c_str());
+    Serial.println("\nWiFi Conectado! IP: " + WiFi.localIP().toString());
+
+    // Sincroniza hora via NTP
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    Serial.println("Sincronizando hora...");
+  } else {
+    u8g2.drawStr(0, 10, "Erro WiFi");
+    Serial.println("\nFalha na conexao WiFi.");
+  }
+  u8g2.sendBuffer();
+  delay(2000);
+}
+
+// --- FUNÇÕES GENÉRICAS SUPABASE ---
+
+// Busca genérica (VLOOKUP)
+String supabaseGenericLookup(String table, String filterCol, String filterVal,
+                             String targetCol) {
+  if (WiFi.status() != WL_CONNECTED)
+    return "Erro: Offline";
+
+  HTTPClient http;
+  String url = String(supabase_url) + "/rest/v1/" + table + "?" + filterCol +
+               "=eq." + filterVal;
+
+  http.begin(url);
+  http.addHeader("apikey", supabase_key);
+  http.addHeader("Authorization", "Bearer " + String(supabase_key));
+
+  int httpCode = http.GET();
+  String result = "Nao encontrado";
+
+  if (httpCode == 200) {
+    String payload = http.getString();
+    JsonDocument doc;
+    deserializeJson(doc, payload);
+
+    if (doc.size() > 0) {
+      result = doc[0][targetCol].as<String>();
+    }
+  } else {
+    Serial.print("Erro GET em " + table + ": ");
+    Serial.println(httpCode);
+  }
+  http.end();
+  return result;
+}
+
+// Inserção genérica (POST)
+bool supabaseGenericInsert(String table, JsonDocument data) {
+  if (WiFi.status() != WL_CONNECTED)
+    return false;
+
+  HTTPClient http;
+  String url = String(supabase_url) + "/rest/v1/" + table;
+
+  http.begin(url);
+  http.addHeader("apikey", supabase_key);
+  http.addHeader("Authorization", "Bearer " + String(supabase_key));
+  http.addHeader("Content-Type", "application/json");
+
+  String jsonPayload;
+  serializeJson(data, jsonPayload);
+
+  int httpCode = http.POST(jsonPayload);
+  http.end();
+
+  if (httpCode == 201) {
+    Serial.println("POST em " + table + " sucesso!");
+    return true;
+  } else {
+    Serial.print("Erro POST em " + table + ": ");
+    Serial.println(httpCode);
+    return false;
+  }
+}
+
+void setup() {
+
+  Serial.begin(115200);
+
+  // Configuração dos botões
+  pinMode(BTN1, INPUT_PULLUP);
+  pinMode(BTN2, INPUT_PULLUP);
+  pinMode(BTN3, INPUT_PULLUP);
+
+  // Inicializa o barramento I2C com os pinos solicitados
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  // Inicializa o display
+  u8g2.begin();
+  u8g2.setPowerSave(0);
+
+  // Conecta ao WiFi
+  initWiFi();
+
+  // Verifica se acordou do sleep
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_GPIO) {
+    Serial.println("Acordado por GPIO!");
+  }
+
+  Serial.println("Sistema Iniciado!");
+  lastActivityTime = millis();
+}
+
+// Estados para detecção de borda nos botões
+bool btn1LastState = HIGH;
+bool btn2LastState = HIGH;
+bool btn3LastState = HIGH;
+
+void loop() {
+  bool activity = false;
+
+  // Lógica de detecção de borda (Trigger apenas no momento do clique)
+  bool btn1State = digitalRead(BTN1);
+  bool btn2State = digitalRead(BTN2);
+  bool btn3State = digitalRead(BTN3);
+
+  // Botão 1: Escreve na tabela "tempos"
+  if (btn1State == LOW && btn1LastState == HIGH) {
+    lastPressed = BTN1;
+    activity = true;
+
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 10, "Enviando Tempo...");
+    u8g2.sendBuffer();
+
+    JsonDocument data;
+    data["operador"] = "000747";
+    data["tempo"] = getFormattedTime();
+
+    if (supabaseGenericInsert("tempos", data)) {
+      u8g2.drawStr(0, 30, "Sucesso!");
+    } else {
+      u8g2.drawStr(0, 30, "Erro!");
+    }
+    u8g2.sendBuffer();
+    delay(2000);
+  }
+
+  // Botão 2: Procura na tabela "barcos"
+  if (btn2State == LOW && btn2LastState == HIGH) {
+    lastPressed = BTN2;
+    activity = true;
+
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 10, "Buscando Barco...");
+    u8g2.sendBuffer();
+
+    String ordem =
+        supabaseGenericLookup("barcos", "barco", "01010", "ordem_fabrico");
+
+    u8g2.drawStr(0, 30, "Ordem:");
+    u8g2.drawStr(0, 50, ordem.c_str());
+    u8g2.sendBuffer();
+    delay(3000);
+  }
+
+  // Botão 3: Procura na tabela "operadores"
+  if (btn3State == LOW && btn3LastState == HIGH) {
+    lastPressed = BTN3;
+    activity = true;
+
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 10, "Buscando Operador...");
+    u8g2.sendBuffer();
+
+    String nome =
+        supabaseGenericLookup("operadores", "numero", "000747", "nome");
+
+    u8g2.drawStr(0, 30, "Nome:");
+    u8g2.drawStr(0, 50, nome.c_str());
+    u8g2.sendBuffer();
+    delay(3000);
+  }
+
+  // Atualiza estados anteriores
+  btn1LastState = btn1State;
+  btn2LastState = btn2State;
+  btn3LastState = btn3State;
+
+  if (activity) {
+    lastActivityTime = millis();
+  }
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawStr(0, 10, "ESP32-C3 Online");
+  u8g2.drawStr(0, 30, WiFi.localIP().toString().c_str());
+
+  if (lastPressed != -1) {
+    char buf[30];
+    sprintf(buf, "Ultimo: %d", lastPressed);
+    u8g2.drawStr(0, 50, buf);
+  } else {
+    u8g2.drawStr(0, 50, "Pronto para cliques...");
+  }
+
+  u8g2.sendBuffer();
+
+  // Verifica se é hora de dormir
+  if (millis() - lastActivityTime > sleepTimeout) {
+    goToSleep();
+  }
+
+  delay(50); // Loop mais responsivo
+}
