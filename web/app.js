@@ -71,7 +71,8 @@ async function handleButton(buttonNumber, element) {
   if (buttonNumber === 1) {
     setTemp("Enviando Tempo...", "", 15000);
     const result = await callApi("button1");
-    setTemp("Enviando Tempo...", result.ok ? "Sucesso!" : "Erro!", 2000);
+    const line2 = result.ok ? `Sucesso ${result.tempo || ""}`.trim() : "Erro!";
+    setTemp("Enviando Tempo...", line2, 2000);
   }
 
   if (buttonNumber === 2) {
