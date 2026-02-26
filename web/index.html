@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RFID Web Simulator</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <div class="panel" id="panel">
+        <img class="bg" src="image-1772109347678.png" alt="RFID UI" />
+
+        <div class="display-cover" id="displayCover">
+          <div class="display-content" id="displayContent">
+            <div class="top-row">
+              <div class="battery" aria-label="battery">
+                <div class="battery-fill" id="batteryFill"></div>
+              </div>
+              <div class="wifi" id="wifiIcon" aria-label="wifi">
+                <span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+            <div class="line" id="line1"></div>
+            <div class="line" id="line2"></div>
+          </div>
+        </div>
+
+        <div class="rfid-led" id="rfidLed"></div>
+
+        <button class="hotspot rfid-touch" id="rfidTouch" aria-label="RFID touch"></button>
+
+        <input
+          class="manual-input"
+          id="manualInput"
+          type="text"
+          inputmode="latin"
+          autocomplete="off"
+          placeholder=""
+          maxlength="32"
+        />
+
+        <button class="hotspot btn up" id="btnUp" aria-label="Botao cima"></button>
+        <button class="hotspot btn sel" id="btnSel" aria-label="Botao select"></button>
+        <button class="hotspot btn down" id="btnDown" aria-label="Botao baixo"></button>
+      </div>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
