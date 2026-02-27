@@ -33,7 +33,6 @@ Este projeto tem duas versões do simulador:
 	- `web/index.html`
 	- `web/styles.css`
 	- `web/app.js`
-	- `web/image-1772109347678.png`
 - Backend Netlify Functions: `netlify/functions/`
 	- `button1.js` (insert em `tempos`)
 	- `button2.js` (lookup em `barcos`)

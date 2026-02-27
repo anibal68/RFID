@@ -9,40 +9,65 @@
   <body>
     <main class="app">
       <div class="panel" id="panel">
-        <img class="bg" src="image-1772109347678.png" alt="RFID UI" />
+        <div class="screw tl"></div>
+        <div class="screw tr"></div>
+        <div class="screw bl"></div>
+        <div class="screw br"></div>
 
-        <div class="display-cover" id="displayCover">
-          <div class="display-content" id="displayContent">
-            <div class="top-row">
-              <div class="battery" aria-label="battery">
-                <div class="battery-fill" id="batteryFill"></div>
-              </div>
-              <div class="wifi" id="wifiIcon" aria-label="wifi">
-                <span></span><span></span><span></span><span></span>
+        <section class="left-panel">
+          <button class="rfid-touch" id="rfidTouch" aria-label="RFID touch">
+            <div class="rfid-ring">
+              <div class="rfid-inner">
+                <div class="rfid-arcs"></div>
+                <div class="rfid-dot"></div>
+                <div class="rfid-text">RFID SENSOR</div>
               </div>
             </div>
-            <div class="line" id="line1"></div>
-            <div class="line" id="line2"></div>
+            <div class="rfid-led" id="rfidLed"></div>
+          </button>
+
+          <div class="manual-label">TECLADO MANUAL (SUBSTITUI CARTÃO FISICO)</div>
+          <div class="manual-wrap">
+            <input
+              class="manual-input"
+              id="manualInput"
+              type="text"
+              inputmode="latin"
+              autocomplete="off"
+              placeholder=""
+              maxlength="32"
+            />
           </div>
-        </div>
+        </section>
 
-        <div class="rfid-led" id="rfidLed"></div>
+        <section class="right-panel">
+          <div class="display-cover" id="displayCover">
+            <div class="display-content" id="displayContent">
+              <div class="top-row">
+                <div class="battery" aria-label="battery">
+                  <div class="battery-fill" id="batteryFill"></div>
+                </div>
+                <div class="wifi" id="wifiIcon" aria-label="wifi">
+                  <span></span><span></span><span></span><span></span>
+                </div>
+              </div>
+              <div class="line" id="line1"></div>
+              <div class="line" id="line2"></div>
+            </div>
+          </div>
 
-        <button class="hotspot rfid-touch" id="rfidTouch" aria-label="RFID touch"></button>
+          <div class="buttons-row">
+            <button class="btn up" id="btnUp" aria-label="Botao cima">▲</button>
+            <button class="btn sel" id="btnSel" aria-label="Botao select">SEL</button>
+            <button class="btn down" id="btnDown" aria-label="Botao baixo">▼</button>
+          </div>
 
-        <input
-          class="manual-input"
-          id="manualInput"
-          type="text"
-          inputmode="latin"
-          autocomplete="off"
-          placeholder=""
-          maxlength="32"
-        />
-
-        <button class="hotspot btn up" id="btnUp" aria-label="Botao cima"></button>
-        <button class="hotspot btn sel" id="btnSel" aria-label="Botao select"></button>
-        <button class="hotspot btn down" id="btnDown" aria-label="Botao baixo"></button>
+          <div class="buttons-labels">
+            <span>UP/FIM</span>
+            <span>SELECT</span>
+            <span>PAUSAS</span>
+          </div>
+        </section>
       </div>
     </main>
 

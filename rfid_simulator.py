@@ -46,14 +46,13 @@ class RFIDSimulatorApp:
             2: (507, 273, 607, 373),
             3: (747, 273, 847, 373),
         }
-        self.display_area = (485, 58, 844, 206)
-        self.rfid_touch_area = (128, 84, 330, 286)
-        self.manual_input_area = (64, 320, 402, 378)
-        self.background_image = None
+        self.display_area = (520, 82, 850, 212)
+        self.rfid_touch_area = (145, 80, 335, 270)
+        self.manual_input_area = (76, 337, 406, 411)
         self.manual_code_var = tk.StringVar(value="")
         self.rfid_dot_visible = True
         self.rfid_dot_color = "#1ec15c"
-        self.rfid_dot_area = (268, 95, 282, 109)
+        self.rfid_dot_area = (307, 114, 321, 128)
 
         self.oled_x = self.display_area[0] + 8
         self.oled_y = self.display_area[1] + 8
@@ -105,43 +104,30 @@ class RFIDSimulatorApp:
     def _draw_case(self) -> None:
         self.canvas.delete("all")
 
-        has_background = self._try_draw_background_image()
+        self.canvas.create_rectangle(8, 8, 912, 452, fill="#04112a", outline="")
+        self.canvas.create_rectangle(20, 20, 900, 440, fill="#b6bfcd", outline="#8e9ab0", width=4)
+        self.canvas.create_rectangle(28, 28, 892, 432, outline="#b8c2d3", width=8)
 
-        if not has_background:
-            self.canvas.create_rectangle(8, 8, 912, 452, fill="#0a1329", outline="")
-            self.canvas.create_rectangle(26, 30, 890, 430, fill="#9ea9bc", outline="#8594ad", width=2)
-            self.canvas.create_rectangle(24, 28, 892, 432, outline="#b8c2d3", width=14)
-            self.canvas.create_line(446, 36, 446, 424, fill="#aeb8c7", width=4)
-            self.canvas.create_oval(34, 34, 48, 48, fill="#7f8fa6", outline="#72839a")
-            self.canvas.create_oval(864, 34, 878, 48, fill="#7f8fa6", outline="#72839a")
-            self.canvas.create_oval(34, 392, 48, 406, fill="#7f8fa6", outline="#72839a")
-            self.canvas.create_oval(864, 392, 878, 406, fill="#7f8fa6", outline="#72839a")
+        self.canvas.create_rectangle(26, 26, 453, 434, fill="#b9c2cf", outline="")
+        self.canvas.create_rectangle(453, 26, 894, 434, fill="#aab5c6", outline="")
+
+        self._draw_screw(45, 45)
+        self._draw_screw(875, 45)
+        self._draw_screw(45, 415)
+        self._draw_screw(875, 415)
 
         for button_id, area in self.button_areas.items():
             self._draw_button(button_id, area)
 
-        if not has_background:
-            self._draw_rfid_emblem()
+        self._draw_rfid_emblem()
         self._draw_display_cutout()
         self._draw_manual_input_hint()
         self._draw_rfid_status_dot()
 
-    def _try_draw_background_image(self) -> None:
-        if self.background_image is not None:
-            self.canvas.create_image(0, 0, image=self.background_image, anchor="nw")
-            return True
-
-        for image_path in ("image-1772109347678.png", "ui_reference.png", "mockup.png", "layout.png"):
-            if not os.path.exists(image_path):
-                continue
-            try:
-                self.background_image = tk.PhotoImage(file=image_path)
-                self.canvas.create_image(0, 0, image=self.background_image, anchor="nw")
-                return True
-            except tk.TclError:
-                continue
-
-        return False
+    def _draw_screw(self, cx: int, cy: int) -> None:
+        self.canvas.create_oval(cx - 7, cy - 7, cx + 7, cy + 7, fill="#7d8ca5", outline="#6f7f99")
+        self.canvas.create_line(cx - 4, cy, cx + 4, cy, fill="#667792", width=2)
+        self.canvas.create_line(cx, cy - 4, cx, cy + 4, fill="#667792", width=2)
 
     def _draw_button(self, button_id: int, area: tuple[int, int, int, int]) -> None:
         x1, y1, x2, y2 = area
@@ -196,28 +182,28 @@ class RFIDSimulatorApp:
         self.canvas.create_text(cx, y2 + 34, text=label, fill="#5d6f87", font=("Consolas", 12, "bold"))
 
     def _draw_rfid_emblem(self) -> None:
-        self.canvas.create_oval(128, 84, 330, 286, fill="#a5bfeb", outline="#a5bfeb", width=3)
-        self.canvas.create_oval(146, 102, 312, 268, fill="#b9c9df", outline="#b9c9df", width=2)
+        self.canvas.create_oval(145, 80, 335, 270, fill="#a7c1ed", outline="#a7c1ed", width=3)
+        self.canvas.create_oval(163, 98, 317, 252, fill="#b8c9df", outline="#b8c9df", width=2)
 
         self.canvas.create_text(
-            230,
-            234,
+            240,
+            232,
             text="RFID SENSOR",
             fill="#163aa8",
+            font=("Consolas", 15, "bold"),
+        )
+
+        self.canvas.create_text(
+            240,
+            188,
+            text="RFID",
+            fill="#2d65d2",
             font=("Consolas", 16, "bold"),
         )
 
-        self.canvas.create_text(
-            220,
-            185,
-            text="RFID",
-            fill="#2d65d2",
-            font=("Consolas", 17, "bold"),
-        )
-
-        self.canvas.create_arc(192, 127, 260, 195, start=35, extent=110, style=tk.ARC, outline="#3e7ae4", width=5)
-        self.canvas.create_arc(202, 137, 274, 209, start=35, extent=110, style=tk.ARC, outline="#3e7ae4", width=5)
-        self.canvas.create_arc(214, 149, 286, 221, start=35, extent=110, style=tk.ARC, outline="#3e7ae4", width=5)
+        self.canvas.create_arc(208, 122, 272, 186, start=35, extent=110, style=tk.ARC, outline="#3e7ae4", width=5)
+        self.canvas.create_arc(216, 132, 284, 200, start=35, extent=110, style=tk.ARC, outline="#3e7ae4", width=5)
+        self.canvas.create_arc(226, 145, 294, 213, start=35, extent=110, style=tk.ARC, outline="#3e7ae4", width=5)
 
     def _draw_rfid_status_dot(self) -> None:
         if self.rfid_dot_visible:
@@ -226,7 +212,15 @@ class RFIDSimulatorApp:
 
     def _draw_manual_input_hint(self) -> None:
         x1, y1, x2, y2 = self.manual_input_area
-        self.canvas.create_rectangle(x1, y1, x2, y2, fill="#f2f4f8", outline="#3374df", width=4)
+        self.canvas.create_text(
+            (x1 + x2) // 2,
+            y1 - 10,
+            text="TECLADO MANUAL (SUBSTITUI CARTAO FISICO)",
+            fill="#5f7290",
+            font=("Consolas", 12, "bold"),
+        )
+        self.canvas.create_rectangle(x1 - 8, y1 - 8, x2 + 8, y2 + 8, fill="#d9dee7", outline="#3a77df", width=4)
+        self.canvas.create_rectangle(x1, y1, x2, y2, fill="#f1f4f8", outline="#3a77df", width=2)
         if not self.manual_code_var.get():
             self.canvas.create_text(
                 (x1 + x2) // 2,
@@ -240,8 +234,8 @@ class RFIDSimulatorApp:
     def _draw_display_cutout(self) -> None:
         x1, y1, x2, y2 = self.display_area
 
-        self.canvas.create_rectangle(x1 - 10, y1 - 10, x2 + 10, y2 + 10, fill="#3d4f68", outline="#3d4f68")
-        self.canvas.create_rectangle(x1, y1, x2, y2, fill="#101f18", outline="#25363f", width=2)
+        self.canvas.create_rectangle(x1 - 10, y1 - 10, x2 + 10, y2 + 10, fill="#3f526f", outline="#3f526f")
+        self.canvas.create_rectangle(x1, y1, x2, y2, fill="#0e2018", outline="#1f3130", width=2)
         self._draw_oled_screen()
 
     def _draw_battery_icon(self, percentage: int) -> None:
