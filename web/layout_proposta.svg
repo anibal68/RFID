@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="460" viewBox="0 0 920 460">
+  <defs>
+    <linearGradient id="bgFrame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c8cfda"/>
+      <stop offset="1" stop-color="#aeb8c8"/>
+    </linearGradient>
+    <linearGradient id="leftPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bcc4d0"/>
+      <stop offset="1" stop-color="#adb8c8"/>
+    </linearGradient>
+    <linearGradient id="rightPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#aeb8c8"/>
+      <stop offset="1" stop-color="#9eaac0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#2a3348" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="460" fill="#04112a"/>
+  <rect x="20" y="20" width="880" height="420" rx="28" fill="url(#bgFrame)" stroke="#8e9ab0" stroke-width="6"/>
+
+  <rect x="26" y="26" width="427" height="408" rx="22" fill="url(#leftPanel)"/>
+  <rect x="453" y="26" width="441" height="408" rx="22" fill="url(#rightPanel)"/>
+
+  <circle cx="45" cy="45" r="7" fill="#7d8ca5" stroke="#6f7f99"/>
+  <line x1="41" y1="45" x2="49" y2="45" stroke="#667792" stroke-width="1.4"/>
+  <line x1="45" y1="41" x2="45" y2="49" stroke="#667792" stroke-width="1.4"/>
+
+  <circle cx="875" cy="45" r="7" fill="#7d8ca5" stroke="#6f7f99"/>
+  <line x1="871" y1="45" x2="879" y2="45" stroke="#667792" stroke-width="1.4"/>
+  <line x1="875" y1="41" x2="875" y2="49" stroke="#667792" stroke-width="1.4"/>
+
+  <circle cx="45" cy="415" r="7" fill="#7d8ca5" stroke="#6f7f99"/>
+  <line x1="41" y1="415" x2="49" y2="415" stroke="#667792" stroke-width="1.4"/>
+  <line x1="45" y1="411" x2="45" y2="419" stroke="#667792" stroke-width="1.4"/>
+
+  <circle cx="875" cy="415" r="7" fill="#7d8ca5" stroke="#6f7f99"/>
+  <line x1="871" y1="415" x2="879" y2="415" stroke="#667792" stroke-width="1.4"/>
+  <line x1="875" y1="411" x2="875" y2="419" stroke="#667792" stroke-width="1.4"/>
+
+  <circle cx="240" cy="175" r="95" fill="#a7c1ed"/>
+  <circle cx="240" cy="175" r="78" fill="#b8c9df"/>
+  <path d="M 214 154 Q 240 132 266 154" stroke="#427edf" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M 220 168 Q 240 152 260 168" stroke="#427edf" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M 227 180 Q 240 170 253 180" stroke="#427edf" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <circle cx="240" cy="188" r="4" fill="#427edf"/>
+  <text x="240" y="235" text-anchor="middle" font-family="Consolas, monospace" font-size="28" fill="#2450b9" font-weight="700">RFID</text>
+
+  <circle cx="315" cy="122" r="8" fill="#1ec15c"/>
+
+  <text x="240" y="322" text-anchor="middle" font-family="Consolas, monospace" font-size="20" fill="#5f7290" font-weight="700">TECLADO MANUAL</text>
+  <rect x="75" y="337" width="330" height="74" rx="12" fill="#d9dee7" stroke="#3a77df" stroke-width="5"/>
+  <rect x="86" y="347" width="308" height="54" fill="#f1f4f8" stroke="#3a77df" stroke-width="2"/>
+  <text x="240" y="382" text-anchor="middle" font-family="Consolas, monospace" font-size="20" fill="#97a5bb" font-weight="700">PIQUE O CARTÃO AQUI</text>
+
+  <rect x="510" y="72" width="350" height="150" fill="#3f526f"/>
+  <rect x="520" y="82" width="330" height="130" fill="#0e2018" stroke="#1f3130" stroke-width="2"/>
+  <rect x="528" y="90" width="20" height="14" fill="#c4ffc7"/>
+  <rect x="551" y="92" width="4" height="10" fill="#c4ffc7"/>
+  <rect x="807" y="95" width="5" height="6" fill="#c4ffc7"/>
+  <rect x="815" y="91" width="5" height="10" fill="#c4ffc7"/>
+  <rect x="823" y="87" width="5" height="14" fill="#c4ffc7"/>
+  <text x="528" y="145" font-family="Consolas, monospace" font-size="30" fill="#47ef8d" font-weight="700">192.168.1.120</text>
+  <text x="528" y="186" font-family="Consolas, monospace" font-size="30" fill="#47ef8d" font-weight="700">Pronto...</text>
+
+  <g filter="url(#shadow)">
+    <circle cx="585" cy="336" r="48" fill="#ef3f66"/>
+    <text x="585" y="347" text-anchor="middle" font-family="Consolas, monospace" font-size="42" fill="#fff" font-weight="700">▲</text>
+
+    <circle cx="710" cy="336" r="48" fill="#3d7ce3"/>
+    <text x="710" y="347" text-anchor="middle" font-family="Consolas, monospace" font-size="40" fill="#eef5ff" font-weight="700">SEL</text>
+
+    <circle cx="835" cy="336" r="48" fill="#ef3f66"/>
+    <text x="835" y="347" text-anchor="middle" font-family="Consolas, monospace" font-size="42" fill="#fff" font-weight="700">▼</text>
+  </g>
+
+  <text x="585" y="404" text-anchor="middle" font-family="Consolas, monospace" font-size="24" fill="#667995" font-weight="700">UP/FIM</text>
+  <text x="710" y="404" text-anchor="middle" font-family="Consolas, monospace" font-size="24" fill="#667995" font-weight="700">SELECT</text>
+  <text x="835" y="404" text-anchor="middle" font-family="Consolas, monospace" font-size="24" fill="#667995" font-weight="700">PAUSAS</text>
+</svg>
