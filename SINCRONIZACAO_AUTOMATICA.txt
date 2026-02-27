@@ -1,0 +1,99 @@
+================================================================================
+SINCRONIZAÇÃO AUTOMÁTICA COM GITHUB - REFERÊNCIA RÁPIDA
+================================================================================
+
+REPOSITÓRIOS CONFIGURADOS:
+- RFID: https://github.com/anibal68/RFID.git
+- Leitor_Barras: https://github.com/anibal68/Leitor_Barras.git
+
+LOCALIZAÇÃO DOS SCRIPTS:
+- Script de sincronização: /home/abt/Documentos/PlatformIO/Projects/auto-sync-all.sh
+- Log de sincronização: /home/abt/Documentos/PlatformIO/Projects/sync.log
+
+================================================================================
+CONFIGURAÇÃO DO CRON (SINCRONIZAÇÃO AUTOMÁTICA A CADA 10 MINUTOS)
+================================================================================
+
+COMANDO PARA ADICIONAR:
+(crontab -l 2>/dev/null; echo "*/10 * * * * /home/abt/Documentos/PlatformIO/Projects/auto-sync-all.sh >> /home/abt/Documentos/PlatformIO/Projects/sync.log 2>&1") | crontab -
+
+================================================================================
+VARIAÇÕES DE INTERVALO
+================================================================================
+
+A CADA 5 MINUTOS:
+*/5 * * * * /home/abt/Documentos/PlatformIO/Projects/auto-sync-all.sh >> /home/abt/Documentos/PlatformIO/Projects/sync.log 2>&1
+
+A CADA 15 MINUTOS:
+*/15 * * * * /home/abt/Documentos/PlatformIO/Projects/auto-sync-all.sh >> /home/abt/Documentos/PlatformIO/Projects/sync.log 2>&1
+
+A CADA HORA:
+0 * * * * /home/abt/Documentos/PlatformIO/Projects/auto-sync-all.sh >> /home/abt/Documentos/PlatformIO/Projects/sync.log 2>&1
+
+DIARIAMENTE (00:00):
+0 0 * * * /home/abt/Documentos/PlatformIO/Projects/auto-sync-all.sh >> /home/abt/Documentos/PlatformIO/Projects/sync.log 2>&1
+
+================================================================================
+COMANDOS ÚTEIS
+================================================================================
+
+VER CRONTAB ATUAL:
+crontab -l
+
+EDITAR CRONTAB:
+crontab -e
+
+REMOVER CRONTAB:
+crontab -r
+
+TESTAR O SCRIPT MANUALMENTE:
+/home/abt/Documentos/PlatformIO/Projects/auto-sync-all.sh
+
+VER LOG DE SINCRONIZAÇÃO:
+tail -f /home/abt/Documentos/PlatformIO/Projects/sync.log
+
+VER ÚLTIMAS 50 LINHAS DO LOG:
+tail -50 /home/abt/Documentos/PlatformIO/Projects/sync.log
+
+================================================================================
+O QUE O SCRIPT FAZ
+================================================================================
+
+1. Verifica ambos os repositórios (RFID e Leitor_Barras)
+2. Se houver mudanças, faz:
+   - git add . (adiciona todos os arquivos modificados)
+   - git commit -m "Auto-sync: [data e hora]"
+   - git push (envia para GitHub)
+3. Registra cada ação no arquivo sync.log
+
+================================================================================
+PARA ADICIONAR MAIS REPOSITÓRIOS
+================================================================================
+
+Editar o arquivo: /home/abt/Documentos/PlatformIO/Projects/auto-sync-all.sh
+
+Encontrar a seção:
+PROJECTS=(
+    "/home/abt/Documentos/PlatformIO/Projects/RFID"
+    "/home/abt/Documentos/PlatformIO/Projects/Leitor_Barras"
+)
+
+E adicionar a novo repositório:
+PROJECTS=(
+    "/home/abt/Documentos/PlatformIO/Projects/RFID"
+    "/home/abt/Documentos/PlatformIO/Projects/Leitor_Barras"
+    "/novo/caminho/do/projeto"
+)
+
+================================================================================
+NOTA IMPORTANTE
+================================================================================
+
+- O script só faz commit/push se houver mudanças detectadas
+- Se receber mensagens de erro sobre "main" ou "master", o script tenta ambas
+- Todos as ações são registadas no arquivo sync.log para auditoria
+- Para parar a sincronização automática, execute: crontab -r
+
+================================================================================
+Data de Criação: 24 de fevereiro de 2026
+================================================================================
