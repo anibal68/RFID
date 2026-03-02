@@ -63,6 +63,12 @@ struct Operator {
 };
 Operator operadores[MAX_OPERATORS];
 
+// ===== SISTEMA DE SELEÇÃO DE ESTAÇÕES =====
+bool seletando_estacao = false;  // Estado: em seleção?
+int estacao_selecionada = 0;     // Índice da estação atual (0-49)
+long btn2_press_time = 0;        // Tempo de pressão do botão 2
+const long LONG_PRESS_TIME = 2000; // 2 segundos para ativar seleção
+
 // Configuração NTP
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 0; // UTC
@@ -159,8 +165,19 @@ void drawMainScreen() {
   drawWiFiIcon(cachedRssi);
   
   // Linha 2: Estação
-  u8g2.drawStr(0, 20, "Est:");
-  u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
+  // Se está selecionando, pisca "Est:" e mostra a estação atual do array
+  if (seletando_estacao) {
+    // Pisca: alterna a cada 500ms
+    if ((millis() / 500) % 2 == 0) {
+      u8g2.drawStr(0, 20, "Est:");
+    }
+    // Sempre mostra a estação selecionada
+    u8g2.drawStr(30, 20, estacoes[estacao_selecionada].nome.c_str());
+  } else {
+    // Normal: mostra "Est:" e a variável A
+    u8g2.drawStr(0, 20, "Est:");
+    u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
+  }
   
   // Linha 3: Ordem de Produção
   u8g2.drawStr(0, 35, "Ord:");
@@ -228,19 +245,20 @@ int getBatteryPercentage() {
 
 void drawWiFiIcon(int rssi) {
   int x = 110;
-  int y = 10;
+  int y = 0;  // Alinhado com bateria
   if (WiFi.status() != WL_CONNECTED) {
     u8g2.drawStr(x, y, "X");
     return;
   }
+  // WiFi icon menos espesso (2 pixels de altura)
   if (rssi > -90)
-    u8g2.drawBox(x, y - 2, 2, 2);
+    u8g2.drawBox(x, y + 3, 2, 2);
   if (rssi > -80)
-    u8g2.drawBox(x + 3, y - 4, 2, 4);
+    u8g2.drawBox(x + 3, y + 2, 2, 3);
   if (rssi > -70)
-    u8g2.drawBox(x + 6, y - 6, 2, 6);
+    u8g2.drawBox(x + 6, y + 1, 2, 4);
   if (rssi > -60)
-    u8g2.drawBox(x + 9, y - 8, 2, 8);
+    u8g2.drawBox(x + 9, y, 2, 5);
 }
 
 // Helper to decode WiFi status
@@ -467,71 +485,94 @@ void loop() {
   bool btn2State = digitalRead(BTN2);
   bool btn3State = digitalRead(BTN3);
 
-  // Botão 1: Escreve na tabela "tempos"
-  if (btn1State == LOW && btn1LastState == HIGH) {
-    lastPressed = BTN1;
-    activity = true;
-
-    u8g2.clearBuffer();
-    u8g2.drawStr(0, 10, "Enviando Tempo...");
-    u8g2.sendBuffer();
-
-    JsonDocument data;
-    data["operador"] = "000747";
-    data["tempo"] = getFormattedTime();
-
-    if (supabaseGenericInsert("tempos", data)) {
-      u8g2.drawStr(0, 30, "Sucesso!");
-      updateVariable('C', "000747");
-    } else {
-      u8g2.drawStr(0, 30, "Erro!");
-    }
-    u8g2.sendBuffer();
-    delay(2000);
-  }
-
-  // Botão 2: Procura na tabela "barcos"
+  // ===== SISTEMA DE SELEÇÃO DE ESTAÇÕES =====
+  
+  // Botão 2: Detecta long press (>2 segundos)
   if (btn2State == LOW && btn2LastState == HIGH) {
-    lastPressed = BTN2;
-    activity = true;
-
-    u8g2.clearBuffer();
-    u8g2.drawStr(0, 10, "Buscando Barco...");
-    u8g2.sendBuffer();
-
-    String ordem =
-        supabaseGenericLookup("barcos", "barco", "01010", "ordem_fabrico");
-
-    u8g2.drawStr(0, 30, "Ordem:");
-    u8g2.drawStr(0, 50, ordem.c_str());
-    
-    if (ordem != "Nao encontrado") {
-      updateVariable('B', ordem);
-    }
-    u8g2.sendBuffer();
-    delay(3000);
+    btn2_press_time = millis();  // Começou a pressionar
   }
 
-  // Botão 3: Procura na tabela "operadores"
-  if (btn3State == LOW && btn3LastState == HIGH) {
-    lastPressed = BTN3;
-    activity = true;
-
-    u8g2.clearBuffer();
-    u8g2.drawStr(0, 10, "Buscando Operador...");
-    u8g2.sendBuffer();
-
-    String nome =
-        supabaseGenericLookup("operadores", "numero", "000747", "nome");
-
-    u8g2.drawStr(0, 30, "Nome:");
-    u8g2.drawStr(0, 50, nome.c_str());
-    
-    if (nome != "Nao encontrado") {
-      updateVariable('A', nome);
+  // Se está em modo de seleção:
+  if (seletando_estacao) {
+    // Botão 1: Anterior (circular)
+    if (btn1State == LOW && btn1LastState == HIGH) {
+      estacao_selecionada = (estacao_selecionada - 1 + NUM_ESTACOES) % NUM_ESTACOES;
+      activity = true;
     }
-    u8g2.sendBuffer();
-    delay(3000);
+
+    // Botão 3: Próxima (circular)
+    if (btn3State == LOW && btn3LastState == HIGH) {
+      estacao_selecionada = (estacao_selecionada + 1) % NUM_ESTACOES;
+      activity = true;
+    }
+
+    // Botão 2: Confirma seleção
+    if (btn2State == LOW && btn2LastState == HIGH) {
+      updateVariable('A', estacoes[estacao_selecionada].nome);
+      seletando_estacao = false;
+      activity = true;
+      Serial.print("[EST] Confirmado: ");
+      Serial.println(estacoes[estacao_selecionada].nome);
+    }
+  } else {
+    // Modo normal (não selecionando)
+    
+    // Botão 2: Long press ativa modo seleção
+    if (btn2State == HIGH && btn2LastState == LOW) {
+      // Soltou o botão - verifica se foi long press
+      long press_duration = millis() - btn2_press_time;
+      if (press_duration > LONG_PRESS_TIME) {
+        seletando_estacao = true;
+        estacao_selecionada = 0;  // Começa na primeira estação
+        activity = true;
+        Serial.println("[EST] Modo seleção ATIVADO");
+      }
+    }
+
+    // Botão 1: Ação original (Supabase)
+    if (btn1State == LOW && btn1LastState == HIGH) {
+      lastPressed = BTN1;
+      activity = true;
+
+      u8g2.clearBuffer();
+      u8g2.drawStr(0, 10, "Enviando Tempo...");
+      u8g2.sendBuffer();
+
+      JsonDocument data;
+      data["operador"] = "000747";
+      data["tempo"] = getFormattedTime();
+
+      if (supabaseGenericInsert("tempos", data)) {
+        u8g2.drawStr(0, 30, "Sucesso!");
+        updateVariable('C', "000747");
+      } else {
+        u8g2.drawStr(0, 30, "Erro!");
+      }
+      u8g2.sendBuffer();
+      delay(2000);
+    }
+
+    // Botão 3: Ação original (Supabase)
+    if (btn3State == LOW && btn3LastState == HIGH) {
+      lastPressed = BTN3;
+      activity = true;
+
+      u8g2.clearBuffer();
+      u8g2.drawStr(0, 10, "Buscando Operador...");
+      u8g2.sendBuffer();
+
+      String nome =
+          supabaseGenericLookup("operadores", "numero", "000747", "nome");
+
+      u8g2.drawStr(0, 30, "Nome:");
+      u8g2.drawStr(0, 50, nome.c_str());
+      
+      if (nome != "Nao encontrado") {
+        updateVariable('A', nome);
+      }
+      u8g2.sendBuffer();
+      delay(3000);
+    }
   }
 
   // Atualiza estados anteriores
