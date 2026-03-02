@@ -66,7 +66,7 @@ Operator operadores[MAX_OPERATORS];
 // ===== SISTEMA DE SELEÇÃO DE ESTAÇÕES =====
 bool seletando_estacao = false;  // Estado: em seleção?
 int estacao_selecionada = 0;     // Índice da estação atual (0-49)
-long btn2_press_time = 0;        // Tempo de pressão do botão 2
+long btn1_press_time = 0;        // Tempo de pressão do BTN1 (Enter)
 const long LONG_PRESS_TIME = 2000; // 2 segundos para ativar seleção
 
 // Configuração NTP
@@ -165,7 +165,7 @@ void drawMainScreen() {
   drawWiFiIcon(cachedRssi);
   
   // Linha 2: Estação
-  // Se está selecionando, pisca "Est:" e mostra a estação atual do array
+  // Se está selecionando, pisca "Est:" enquanto BTN1 está pressionado
   if (seletando_estacao) {
     // Pisca: alterna a cada 500ms
     if ((millis() / 500) % 2 == 0) {
@@ -477,7 +477,6 @@ bool btn2LastState = HIGH;
 bool btn3LastState = HIGH;
 
 void loop() {
-  // Serial.print("L"); // Debug rápido para ver se o loop corre
   bool activity = false;
 
   // Lógica de detecção de borda (Trigger apenas no momento do clique)
@@ -487,91 +486,56 @@ void loop() {
 
   // ===== SISTEMA DE SELEÇÃO DE ESTAÇÕES =====
   
-  // Botão 2: Detecta long press (>2 segundos)
-  if (btn2State == LOW && btn2LastState == HIGH) {
-    btn2_press_time = millis();  // Começou a pressionar
+  // BTN1 (Enter): Detecta pressão contínua para long press
+  if (btn1State == LOW) {
+    // Botão está pressionado
+    if (btn1LastState == HIGH) {
+      // Acabou de ser pressionado
+      btn1_press_time = millis();
+      Serial.println("[BTN1] Pressionado");
+    }
+    
+    // Verifica se já passou de 2 segundos
+    long press_duration = millis() - btn1_press_time;
+    if (press_duration >= LONG_PRESS_TIME && !seletando_estacao) {
+      // Ativa modo seleção (apenas na primeira vez)
+      seletando_estacao = true;
+      // Inicializa com a posição de varA no array
+      if (varA != "") {
+        estacao_selecionada = procurarEstacaoPorNome(varA);
+        if (estacao_selecionada == -1) estacao_selecionada = 0;
+      } else {
+        estacao_selecionada = 0;
+      }
+      Serial.println("[EST] Modo seleção ATIVADO");
+    }
+  } else {
+    // Botão foi solto
+    if (btn1LastState == LOW && seletando_estacao) {
+      // Estava em modo seleção, agora confirma
+      updateVariable('A', estacoes[estacao_selecionada].nome);
+      seletando_estacao = false;
+      Serial.print("[EST] Confirmado: ");
+      Serial.println(estacoes[estacao_selecionada].nome);
+    }
   }
 
   // Se está em modo de seleção:
   if (seletando_estacao) {
-    // Botão 1: Anterior (circular)
-    if (btn1State == LOW && btn1LastState == HIGH) {
+    // BTN2 (Cima): Anterior (circular)
+    if (btn2State == LOW && btn2LastState == HIGH) {
       estacao_selecionada = (estacao_selecionada - 1 + NUM_ESTACOES) % NUM_ESTACOES;
       activity = true;
+      Serial.print("[NAV] Anterior: ");
+      Serial.println(estacoes[estacao_selecionada].nome);
     }
 
-    // Botão 3: Próxima (circular)
+    // BTN3 (Baixo): Próxima (circular)
     if (btn3State == LOW && btn3LastState == HIGH) {
       estacao_selecionada = (estacao_selecionada + 1) % NUM_ESTACOES;
       activity = true;
-    }
-
-    // Botão 2: Confirma seleção
-    if (btn2State == LOW && btn2LastState == HIGH) {
-      updateVariable('A', estacoes[estacao_selecionada].nome);
-      seletando_estacao = false;
-      activity = true;
-      Serial.print("[EST] Confirmado: ");
+      Serial.print("[NAV] Próxima: ");
       Serial.println(estacoes[estacao_selecionada].nome);
-    }
-  } else {
-    // Modo normal (não selecionando)
-    
-    // Botão 2: Long press ativa modo seleção
-    if (btn2State == HIGH && btn2LastState == LOW) {
-      // Soltou o botão - verifica se foi long press
-      long press_duration = millis() - btn2_press_time;
-      if (press_duration > LONG_PRESS_TIME) {
-        seletando_estacao = true;
-        estacao_selecionada = 0;  // Começa na primeira estação
-        activity = true;
-        Serial.println("[EST] Modo seleção ATIVADO");
-      }
-    }
-
-    // Botão 1: Ação original (Supabase)
-    if (btn1State == LOW && btn1LastState == HIGH) {
-      lastPressed = BTN1;
-      activity = true;
-
-      u8g2.clearBuffer();
-      u8g2.drawStr(0, 10, "Enviando Tempo...");
-      u8g2.sendBuffer();
-
-      JsonDocument data;
-      data["operador"] = "000747";
-      data["tempo"] = getFormattedTime();
-
-      if (supabaseGenericInsert("tempos", data)) {
-        u8g2.drawStr(0, 30, "Sucesso!");
-        updateVariable('C', "000747");
-      } else {
-        u8g2.drawStr(0, 30, "Erro!");
-      }
-      u8g2.sendBuffer();
-      delay(2000);
-    }
-
-    // Botão 3: Ação original (Supabase)
-    if (btn3State == LOW && btn3LastState == HIGH) {
-      lastPressed = BTN3;
-      activity = true;
-
-      u8g2.clearBuffer();
-      u8g2.drawStr(0, 10, "Buscando Operador...");
-      u8g2.sendBuffer();
-
-      String nome =
-          supabaseGenericLookup("operadores", "numero", "000747", "nome");
-
-      u8g2.drawStr(0, 30, "Nome:");
-      u8g2.drawStr(0, 50, nome.c_str());
-      
-      if (nome != "Nao encontrado") {
-        updateVariable('A', nome);
-      }
-      u8g2.sendBuffer();
-      delay(3000);
     }
   }
 
