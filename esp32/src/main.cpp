@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <Wire.h>
+#include <Preferences.h>
 
 // Configuração para OLED 1.3" (geralmente SH1106)
 // Se o seu display for SSD1306, mude SH1106 para SSD1306
@@ -43,6 +44,24 @@ long lastActivityTime = 0;
 const long sleepTimeout = 30000; // 30 segundos
 long lastNfcPollTime = 0;        // Para evitar lag no loop
 
+// ===== PERSISTÊNCIA DE DADOS (NVS) =====
+Preferences preferences;
+
+// Variáveis principais com persistência
+String varA = "";  // Estação de trabalho
+String varB = "";  // Ordem de produção
+String varC = "";  // Número de operadores
+String varD = "";  // Variável extra 4
+String varE = "";  // Variável extra 5
+
+// Array 2D: 50 linhas x 2 colunas (nomes e números)
+#define MAX_OPERATORS 50
+struct Operator {
+  String nome;
+  String numero;
+};
+Operator operadores[MAX_OPERATORS];
+
 // Configuração NTP
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 0; // UTC
@@ -81,6 +100,72 @@ String getFormattedTime() {
   char timeStr[20];
   strftime(timeStr, sizeof(timeStr), "%H:%M %d/%m", &timeinfo);
   return String(timeStr);
+}
+
+// ===== FUNÇÕES DE PERSISTÊNCIA (NVS) =====
+
+void initNVS() {
+  preferences.begin("rfid_config", false); // false = read-write mode
+  
+  // Carrega variáveis do NVS
+  varA = preferences.getString("varA", "");
+  varB = preferences.getString("varB", "");
+  varC = preferences.getString("varC", "");
+  varD = preferences.getString("varD", "");
+  varE = preferences.getString("varE", "");
+  
+  Serial.println("[NVS] Variáveis carregadas:");
+  Serial.print("  A: "); Serial.println(varA);
+  Serial.print("  B: "); Serial.println(varB);
+  Serial.print("  C: "); Serial.println(varC);
+  Serial.print("  D: "); Serial.println(varD);
+  Serial.print("  E: "); Serial.println(varE);
+}
+
+void saveNVS() {
+  preferences.putString("varA", varA);
+  preferences.putString("varB", varB);
+  preferences.putString("varC", varC);
+  preferences.putString("varD", varD);
+  preferences.putString("varE", varE);
+  Serial.println("[NVS] Variáveis salvas");
+}
+
+void updateVariable(char varName, String value) {
+  switch(varName) {
+    case 'A': varA = value; break;
+    case 'B': varB = value; break;
+    case 'C': varC = value; break;
+    case 'D': varD = value; break;
+    case 'E': varE = value; break;
+  }
+  saveNVS();
+  Serial.print("[Updated] Var "); Serial.print(varName); Serial.print(": "); Serial.println(value);
+}
+
+// ===== FUNÇÕES DE DISPLAY =====
+
+void drawMainScreen() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  
+  // Linha 1: Bateria e WiFi
+  drawBatteryIcon(cachedBattery);
+  drawWiFiIcon(cachedRssi);
+  
+  // Linha 2: Estação
+  u8g2.drawStr(0, 20, "Est:");
+  u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
+  
+  // Linha 3: Ordem de Produção
+  u8g2.drawStr(0, 35, "Ord:");
+  u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
+  
+  // Linha 4: Número de Operadores
+  u8g2.drawStr(0, 50, "Op#:");
+  u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+  
+  u8g2.sendBuffer();
 }
 
 // Desenha ícone de WiFi no topo direito
@@ -335,6 +420,9 @@ void setup() {
   u8g2.begin();
   u8g2.setPowerSave(0);
 
+  // Inicializa NVS (persistência de dados)
+  initNVS();
+
   esp_sleep_wakeup_cause_t wakeup_cause = esp_sleep_get_wakeup_cause();
   bool isWakeup = (wakeup_cause != ESP_SLEEP_WAKEUP_UNDEFINED);
 
@@ -383,6 +471,7 @@ void loop() {
 
     if (supabaseGenericInsert("tempos", data)) {
       u8g2.drawStr(0, 30, "Sucesso!");
+      updateVariable('C', "000747");
     } else {
       u8g2.drawStr(0, 30, "Erro!");
     }
@@ -404,6 +493,10 @@ void loop() {
 
     u8g2.drawStr(0, 30, "Ordem:");
     u8g2.drawStr(0, 50, ordem.c_str());
+    
+    if (ordem != "Nao encontrado") {
+      updateVariable('B', ordem);
+    }
     u8g2.sendBuffer();
     delay(3000);
   }
@@ -422,6 +515,10 @@ void loop() {
 
     u8g2.drawStr(0, 30, "Nome:");
     u8g2.drawStr(0, 50, nome.c_str());
+    
+    if (nome != "Nao encontrado") {
+      updateVariable('A', nome);
+    }
     u8g2.sendBuffer();
     delay(3000);
   }
@@ -444,23 +541,8 @@ void loop() {
     }
   }
 
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_ncenB08_tr);
-
-  // Status Bar (topo)
-  drawBatteryIcon(cachedBattery);
-  drawWiFiIcon(cachedRssi);
-
-  // Conteúdo Central
-  u8g2.drawStr(0, 30, WiFi.localIP().toString().c_str());
-  if (lastPressed != -1) {
-    char buf[30];
-    sprintf(buf, "Ultimo: %d", lastPressed);
-    u8g2.drawStr(0, 50, buf);
-  } else {
-    u8g2.drawStr(0, 50, "Pronto...");
-  }
-  u8g2.sendBuffer();
+  // ===== EXIBE TELA PRINCIPAL =====
+  drawMainScreen();
 
   // Leitura NFC (Timeout reduzido para 30ms para resposta imediata dos botões)
   uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
@@ -484,10 +566,6 @@ void loop() {
     delay(1500);
   }
 
-  // Verifica se é hora de dormir
-  if (millis() - lastActivityTime > sleepTimeout) {
-    goToSleep();
-  }
-
-  delay(50); // Loop mais responsivo
+  // Loop infinito - sem sleep
+  delay(100); // Pequeno delay para evitar travamentos
 }
