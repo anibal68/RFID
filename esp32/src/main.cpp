@@ -170,6 +170,9 @@ void drawMainScreen() {
   u8g2.drawStr(0, 50, "Op#:");
   u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
   
+  // Linha 5: Teste
+  u8g2.drawStr(0, 63, "Teste");
+  
   u8g2.sendBuffer();
 }
 
@@ -177,13 +180,13 @@ void drawMainScreen() {
 // Desenha ícone de bateria proporcional
 void drawBatteryIcon(int percentage) {
   int x = 0;
-  int y = 2;
+  int y = 0;
   int w = 14;
-  int h = 10;
+  int h = 6;  // Reduzido de 10 para 6
   // Corpo da bateria
   u8g2.drawFrame(x, y, w, h);
   // Ponta da bateria
-  u8g2.drawBox(x + w, y + 2, 2, 6);
+  u8g2.drawBox(x + w, y + 1, 2, 4);
   // Preenchimento interno
   if (percentage > 0) {
     int fill = map(percentage, 0, 100, 0, w - 2);
