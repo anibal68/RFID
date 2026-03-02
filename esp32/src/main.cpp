@@ -3,6 +3,7 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 #include <Preferences.h>
+#include "../include/estacoes.h"
 
 // Configuração para OLED 1.3" (geralmente SH1106)
 // Se o seu display for SSD1306, mude SH1106 para SSD1306
@@ -440,6 +441,9 @@ void setup() {
     nfc.SAMConfig();
 
   lastActivityTime = millis();
+
+  // Debug: Lista as 50 estações disponíveis
+  listarEstacoes();
 }
 
 // Estados para detecção de borda nos botões
