@@ -146,6 +146,10 @@ void updateVariable(char varName, String value) {
 
 // ===== FUNÇÕES DE DISPLAY =====
 
+// Forward declarations
+void drawBatteryIcon(int percentage);
+void drawWiFiIcon(int rssi);
+
 void drawMainScreen() {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
