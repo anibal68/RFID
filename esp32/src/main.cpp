@@ -87,6 +87,7 @@ int selectedField = 0;  // 0=Est, 1=Ord, 2=Op#
 int currentEstacaoIndex = 0;  // Índice no array de estações (0-49)
 
 long editModeStart = 0;  // Quando entrou em modo edição
+long lastStateChangeTime = 0;  // Para feedback visual melhorado da pisca
 const long EDIT_TIMEOUT = 30000; // 30 segundos (timeout edição)
 const long LONG_PRESS_DURATION = 2000; // 2 segundos para long press
 
@@ -98,11 +99,11 @@ bool btn2LongPressDetected = false;
 String lastRfidValue = "";
 
 // Variáveis para leitura RFID em modo Ord
-String currentRFIDReading = "";  // RFID lido atualmente
-String ordFromDatabase = "";     // Ordem devolvida da base de dados
-long rfidReadStart = -1;         // Quando começou a tentar ler RFID
-const long RFID_READ_TIMEOUT = 5000; // 5 segundos para ler RFID
-bool rfidReadingInProgress = false;
+String lastRFIDSuccess = "";      // Último RFID com sucesso na BD
+String ordFromDatabase = "";      // Ordem devolvida da base de dados
+long rfidReadStart = -1;          // Quando começou a tentar ler RFID
+const long RFID_READ_TIMEOUT = 5000; // 5 segundos para primeira leitura
+bool rfidReadingInProgress = false;   // Flag para saber se está em modo leitura contínua
 
 // Tracking de RFIDs já lidos para contagem de operadores
 #define MAX_RFID_HISTORY 10
@@ -187,7 +188,16 @@ void drawWiFiIcon(int rssi);
 
 // Função auxiliar para piscar texto
 bool shouldBlink() {
-  return (millis() / 500) % 2;  // Pisca a cada 500ms
+  // Pisca a cada 500ms normalmente
+  bool normalBlink = (millis() / 500) % 2;
+  
+  // Mas força a estar "ON" nos primeiros 250ms após mudança de estado
+  // para melhorar feedback visual
+  if ((millis() - lastStateChangeTime) < 250) {
+    return true;  // Força ON nos primeiros 250ms
+  }
+  
+  return normalBlink;
 }
 
 // Função para desenhar a tela de edição
@@ -637,14 +647,15 @@ void loop() {
         // Inicializa o índice com a posição atual da estação
         currentEstacaoIndex = procurarIndiceEstacao(varA);
         editModeStart = millis();
+        lastStateChangeTime = millis();  // Feedback visual
         rfidReadingInProgress = false;
-        currentRFIDReading = "";
+        lastRFIDSuccess = "";
         Serial.println("[EDIT] Entrou em modo edição");
       } else if (editState != STATE_NORMAL) {
         // LONG PRESS em modo edição = sair rapidamente
         editState = STATE_NORMAL;
         rfidReadingInProgress = false;
-        currentRFIDReading = "";
+        lastRFIDSuccess = "";
         ordFromDatabase = "";
         lastRfidValue = "";
         Serial.println("[EDIT] Saiu rapidamente por LONG PRESS");
@@ -654,16 +665,17 @@ void loop() {
       if (editState == STATE_SELECT_FIELD) {
         // Entra em modo edição de valor específico
         if (selectedField == 1) {
-          // Para Ord, inicia leitura RFID
+          // Para Ord, inicia leitura RFID contínua
           rfidReadingInProgress = true;
           rfidReadStart = millis();
-          currentRFIDReading = "";
+          lastRFIDSuccess = "";
           ordFromDatabase = "";
           lastRfidValue = "A ler RFID...";
-          Serial.println("[RFID] Iniciando leitura de cartão para Ord");
+          Serial.println("[RFID] Iniciano leitura contínua de cartões para Ord");
         }
         editState = STATE_EDIT_VALUE;
         editModeStart = millis();
+        lastStateChangeTime = millis();  // Feedback visual
         Serial.println("[EDIT] Modo de edição da variável");
       } else if (editState == STATE_EDIT_VALUE) {
         // Confirma valor e sai
@@ -674,34 +686,40 @@ void loop() {
           updateVariable('C', "0");
           Serial.print("[EDIT] Atribuiu Est: ");
           Serial.println(estacaoSelecionada);
-          Serial.println("[EDIT] Resetou varC (operadores) para 0");          // Limpa histórico de RFIDs para nova estação
+          Serial.println("[EDIT] Resetou varC (operadores) para 0");
+          // Limpa histórico de RFIDs para nova estação
           for (int i = 0; i < MAX_RFID_HISTORY; i++) {
-            rfidHistory[i] = \"\";
+            rfidHistory[i] = "";
           }
           rfidHistoryIndex = 0;
-          Serial.println(\"[RFID] Limpou histórico de RFIDs para nova estação\");        } else if (selectedField == 1) {
-          // Para Ord, confirma o valor lido da base de dados
+          Serial.println("[RFID] Limpou histórico de RFIDs para nova estação");
+        } else if (selectedField == 1) {
+          // Para Ord, confirma o valor lido da base de dados (último com sucesso)
+          rfidReadingInProgress = false;  // Para de ler RFID
           if (ordFromDatabase.length() > 0) {
             updateVariable('B', ordFromDatabase);
             // Reset do contador de operadores quando muda ordem
             updateVariable('C', "0");
             Serial.print("[EDIT] Atribuiu Ord: ");
             Serial.println(ordFromDatabase);
-            Serial.println("[EDIT] Resetou varC (operadores) para 0");            // Limpa histórico de RFIDs para nova ordem
+            Serial.println("[EDIT] Resetou varC (operadores) para 0");
+            // Limpa histórico de RFIDs para nova ordem
             for (int i = 0; i < MAX_RFID_HISTORY; i++) {
-              rfidHistory[i] = \"\";
+              rfidHistory[i] = "";
             }
             rfidHistoryIndex = 0;
-            Serial.println(\"[RFID] Limpou histórico de RFIDs para nova ordem\");            lastRfidValue = "Guardado: " + ordFromDatabase;
-          } else if (currentRFIDReading.length() > 0) {
+            Serial.println("[RFID] Limpou histórico de RFIDs para nova ordem");
+            lastRfidValue = "Guardado: " + ordFromDatabase;
+          } else if (lastRFIDSuccess.length() > 0) {
             Serial.println("[EDIT] Nenhuma correspondência encontrada na BD");
             lastRfidValue = "Nao encontrado";
           }
         }
         rfidReadingInProgress = false;
-        currentRFIDReading = "";
+        lastRFIDSuccess = "";
         editState = STATE_SELECT_FIELD;  // Volta a seleccionar campo
         editModeStart = millis();
+        lastStateChangeTime = millis();  // Feedback visual
       }
     }
     btn2PressStart = -1;  // Reset
@@ -714,6 +732,7 @@ void loop() {
         // Roda entre Est, Ord, Op#
         selectedField = (selectedField - 1 + 3) % 3;
         editModeStart = millis();  // Reset timeout
+        lastStateChangeTime = millis();  // Feedback visual
         Serial.print("[EDIT] Campo: ");
         Serial.println(selectedField);
       } else if (editState == STATE_EDIT_VALUE && selectedField == 0) {
@@ -733,6 +752,7 @@ void loop() {
         // Roda entre Est, Ord, Op#
         selectedField = (selectedField + 1) % 3;
         editModeStart = millis();  // Reset timeout
+        lastStateChangeTime = millis();  // Feedback visual
         Serial.print("[EDIT] Campo: ");
         Serial.println(selectedField);
       } else if (editState == STATE_EDIT_VALUE && selectedField == 0) {
@@ -745,79 +765,75 @@ void loop() {
     }
   }
 
-  // ===== LEITURA RFID PARA CAMPO ORD =====
+  // ===== LEITURA RFID CONTÍNUA PARA CAMPO ORD =====
   if (rfidReadingInProgress && selectedField == 1 && editState == STATE_EDIT_VALUE) {
-    // Tenta ler um cartão RFID
+    // Tenta ler um cartão RFID de forma contínua
     String rfidRead = readRFIDCard();
     
-    if (rfidRead.length() > 0 && currentRFIDReading.length() == 0) {
-      // Cartão lido com sucesso
-      currentRFIDReading = rfidRead;
-      lastRfidValue = "RFID: " + rfidRead;
-      Serial.print("[RFID] Cartão lido: ");
-      Serial.println(rfidRead);
-      
-      // Verifica se é um RFID novo (nunca lido antes)
-      isNewRFID = true;
-      for (int i = 0; i < MAX_RFID_HISTORY; i++) {
-        if (rfidHistory[i] == rfidRead) {
-          isNewRFID = false;
-          break;
-        }
-      }
-      
-      // Tenta fazer lookup na tabela "barcos"
-      Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
-      Serial.println(rfidRead);
-      
-      String result = supabaseGenericLookup("barcos", "rfid", rfidRead, "ordem_fabrico");
-      
-      if (result != "Nao encontrado" && result != "Erro: Offline") {
-        ordFromDatabase = result;
-        lastRfidValue = "Ord: " + result;
-        Serial.print("[DB] Ordem encontrada: ");
-        Serial.println(result);
+    if (rfidRead.length() > 0) {
+      // Cartão lido com sucesso - guarda e processa
+      if (lastRFIDSuccess != rfidRead) {
+        // Novo RFID (diferente do anterior)
+        lastRFIDSuccess = rfidRead;
+        lastRfidValue = "RFID: " + rfidRead;
+        Serial.print("[RFID] Cartão lido: ");
+        Serial.println(rfidRead);
         
-        // Se é novo RFID, incrementa contador de operadores
-        if (isNewRFID) {
-          int currentCount = varC.toInt();
-          currentCount++;
-          updateVariable('C', String(currentCount));
-          
-          // Adiciona à history
-          rfidHistory[rfidHistoryIndex] = rfidRead;
-          rfidHistoryIndex = (rfidHistoryIndex + 1) % MAX_RFID_HISTORY;
-          
-          Serial.print("[RFID] Novo operador detectado! varC = ");
-          Serial.println(currentCount);
-        } else {
-          Serial.println("[RFID] RFID já lido antes - varC não incrementa");
+        // Verifica se é um RFID novo (nunca lido antes)
+        isNewRFID = true;
+        for (int i = 0; i < MAX_RFID_HISTORY; i++) {
+          if (rfidHistory[i] == rfidRead) {
+            isNewRFID = false;
+            break;
+          }
         }
-      } else {
-        lastRfidValue = "RFID nao existe";
-        Serial.println("[DB] RFID não encontrado na BD");
+        
+        // Tenta fazer lookup na tabela "barcos"
+        Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
+        Serial.println(rfidRead);
+        
+        String result = supabaseGenericLookup("barcos", "rfid", rfidRead, "ordem_fabrico");
+        
+        if (result != "Nao encontrado" && result != "Erro: Offline") {
+          ordFromDatabase = result;
+          lastRfidValue = "Ord: " + result;
+          Serial.print("[DB] Ordem encontrada: ");
+          Serial.println(result);
+          
+          // Se é novo RFID, incrementa contador de operadores
+          if (isNewRFID) {
+            int currentCount = varC.toInt();
+            currentCount++;
+            updateVariable('C', String(currentCount));
+            
+            // Adiciona à history
+            rfidHistory[rfidHistoryIndex] = rfidRead;
+            rfidHistoryIndex = (rfidHistoryIndex + 1) % MAX_RFID_HISTORY;
+            
+            Serial.print("[RFID] Novo operador detectado! varC = ");
+            Serial.println(currentCount);
+          } else {
+            Serial.println("[RFID] RFID já lido antes - varC não incrementa");
+          }
+        } else {
+          lastRfidValue = "RFID nao existe";
+          Serial.println("[DB] RFID não encontrado na BD");
+        }
       }
-      
-      rfidReadingInProgress = false;  // Parou de tentar ler
-      editModeStart = millis();  // Reset timeout
-    }
-    
-    // Timeout: se passou 5 segundos sem ler nada
-    if ((millis() - rfidReadStart) > RFID_READ_TIMEOUT && currentRFIDReading.length() == 0) {
-      lastRfidValue = "Timeout leitura";
-      rfidReadingInProgress = false;
-      Serial.println("[RFID] Timeout - nenhum cartão lido");
-      editModeStart = millis();  // Reset timeout
+      // Continua tentando ler (não para após o 1º)
+      editModeStart = millis();  // Reset de timeout a cada leitura bem-sucedida
     }
   }
 
   
   // Verifica timeout de edição (30 segundos)
   if (editState != STATE_NORMAL && (millis() - editModeStart) > EDIT_TIMEOUT) {
-    editState = STATE_NORMAL;    rfidReadingInProgress = false;
-    currentRFIDReading = \"\";
-    ordFromDatabase = \"\";
-    lastRfidValue = \"\";    Serial.println("[EDIT] Saiu por timeout");
+    editState = STATE_NORMAL;
+    rfidReadingInProgress = false;
+    lastRFIDSuccess = "";
+    ordFromDatabase = "";
+    lastRfidValue = "";
+    Serial.println("[EDIT] Saiu por timeout");
   }
 
   // Atualiza estados anteriores
