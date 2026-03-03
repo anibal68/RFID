@@ -104,6 +104,12 @@ long rfidReadStart = -1;         // Quando começou a tentar ler RFID
 const long RFID_READ_TIMEOUT = 5000; // 5 segundos para ler RFID
 bool rfidReadingInProgress = false;
 
+// Tracking de RFIDs já lidos para contagem de operadores
+#define MAX_RFID_HISTORY 10
+String rfidHistory[MAX_RFID_HISTORY];   // Último RFID lido
+int rfidHistoryIndex = 0;
+bool isNewRFID = false;  // Flag para saber se é novo RFID
+
 void goToSleep() {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
@@ -196,43 +202,76 @@ void drawEditScreen() {
   // Piscante do campo selecionado
   bool blink = shouldBlink();
   
-  // Linha 2: Estação (Est pisca se selecionado)
-  if (selectedField == 0 && blink) {
-    // Pisca o texto "Est"
-    u8g2.drawStr(0, 20, "Est:");
-  } else if (selectedField != 0) {
-    u8g2.drawStr(0, 20, "Est:");
-  }
-  // Se selecionado e não piscar, não desenha nada (fica em branco)
+  // ===== LINHA 2: ESTAÇÃO =====
+  // Em STATE_SELECT_FIELD: pisca o rótulo se selecionado
+  // Em STATE_EDIT_VALUE: pisca o valor se selecionado
   
-  // Mostra o valor
-  if (editState == STATE_EDIT_VALUE && selectedField == 0) {
-    u8g2.drawStr(30, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());
+  if (editState == STATE_SELECT_FIELD) {
+    // Modo seleção: pisca o rótulo
+    if (selectedField == 0 && blink) {
+      u8g2.drawStr(0, 20, "Est:");  // Pisca
+    } else if (selectedField != 0) {
+      u8g2.drawStr(0, 20, "Est:");  // Sempre visível se não selecionado
+    }
+    // Mostra o valor guardado (sempre visível)
+    u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
+  } else if (editState == STATE_EDIT_VALUE && selectedField == 0) {
+    // Modo edição de Est: pisca o valor
+    u8g2.drawStr(0, 20, "Est:");  // Rótulo sempre visível
+    if (blink) {
+      u8g2.drawStr(30, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());  // Pisca
+    }
   } else {
+    // Estado normal ou outro estado
+    u8g2.drawStr(0, 20, "Est:");
     u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
   }
   
-  // Linha 3: Ordem (Ord pisca se selecionado)
-  if (selectedField == 1 && blink) {
-    // Pisca o texto "Ord"
+  // ===== LINHA 3: ORDEM =====
+  if (editState == STATE_SELECT_FIELD) {
+    // Modo seleção: pisca o rótulo
+    if (selectedField == 1 && blink) {
+      u8g2.drawStr(0, 35, "Ord:");  // Pisca
+    } else if (selectedField != 1) {
+      u8g2.drawStr(0, 35, "Ord:");  // Sempre visível se não selecionado
+    }
+    // Mostra o valor guardado (sempre visível)
+    u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
+  } else if (editState == STATE_EDIT_VALUE && selectedField == 1) {
+    // Modo edição de Ord: pisca o valor
+    u8g2.drawStr(0, 35, "Ord:");  // Rótulo sempre visível
+    if (blink) {
+      // Mostra o valor sendo lido (ou resultado da BD)
+      String displayOrd = ordFromDatabase.length() > 0 ? ordFromDatabase : "A ler...";
+      u8g2.drawStr(30, 35, displayOrd.c_str());  // Pisca
+    }
+  } else {
+    // Estado normal ou outro estado
     u8g2.drawStr(0, 35, "Ord:");
-  } else if (selectedField != 1) {
-    u8g2.drawStr(0, 35, "Ord:");
+    u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
   }
-  // Se selecionado e não piscar, não desenha nada (fica em branco)
   
-  u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
-  
-  // Linha 4: Operadores (Op# pisca se selecionado)
-  if (selectedField == 2 && blink) {
-    // Pisca o texto "Op#"
+  // ===== LINHA 4: OPERADORES =====
+  if (editState == STATE_SELECT_FIELD) {
+    // Modo seleção: pisca o rótulo
+    if (selectedField == 2 && blink) {
+      u8g2.drawStr(0, 50, "Op#:");  // Pisca
+    } else if (selectedField != 2) {
+      u8g2.drawStr(0, 50, "Op#:");  // Sempre visível se não selecionado
+    }
+    // Mostra o valor guardado (sempre visível)
+    u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+  } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
+    // Modo edição de Op# (se implementado no futuro)
+    u8g2.drawStr(0, 50, "Op#:");  // Rótulo sempre visível
+    if (blink) {
+      u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());  // Pisca
+    }
+  } else {
+    // Estado normal ou outro estado
     u8g2.drawStr(0, 50, "Op#:");
-  } else if (selectedField != 2) {
-    u8g2.drawStr(0, 50, "Op#:");
+    u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
   }
-  // Se selecionado e não piscar, não desenha nada (fica em branco)
-  
-  u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
   
   // Linha 5: Debug - Valor RFID lido
   u8g2.drawStr(0, 63, lastRfidValue.c_str());
@@ -595,7 +634,8 @@ void loop() {
       if (editState == STATE_NORMAL) {
         editState = STATE_SELECT_FIELD;
         selectedField = 0;  // Começa em Est
-        currentEstacaoIndex = 0;  // Começa na 1ª estação
+        // Inicializa o índice com a posição atual da estação
+        currentEstacaoIndex = procurarIndiceEstacao(varA);
         editModeStart = millis();
         rfidReadingInProgress = false;
         currentRFIDReading = "";
@@ -605,6 +645,7 @@ void loop() {
         editState = STATE_NORMAL;
         rfidReadingInProgress = false;
         currentRFIDReading = "";
+        ordFromDatabase = "";
         lastRfidValue = "";
         Serial.println("[EDIT] Saiu rapidamente por LONG PRESS");
       }
@@ -629,15 +670,29 @@ void loop() {
         if (selectedField == 0) {
           String estacaoSelecionada = procurarEstacao(currentEstacaoIndex + 1);
           updateVariable('A', estacaoSelecionada);
+          // Reset do contador de operadores quando muda estação
+          updateVariable('C', "0");
           Serial.print("[EDIT] Atribuiu Est: ");
           Serial.println(estacaoSelecionada);
-        } else if (selectedField == 1) {
+          Serial.println("[EDIT] Resetou varC (operadores) para 0");          // Limpa histórico de RFIDs para nova estação
+          for (int i = 0; i < MAX_RFID_HISTORY; i++) {
+            rfidHistory[i] = \"\";
+          }
+          rfidHistoryIndex = 0;
+          Serial.println(\"[RFID] Limpou histórico de RFIDs para nova estação\");        } else if (selectedField == 1) {
           // Para Ord, confirma o valor lido da base de dados
           if (ordFromDatabase.length() > 0) {
             updateVariable('B', ordFromDatabase);
+            // Reset do contador de operadores quando muda ordem
+            updateVariable('C', "0");
             Serial.print("[EDIT] Atribuiu Ord: ");
             Serial.println(ordFromDatabase);
-            lastRfidValue = "Guardado: " + ordFromDatabase;
+            Serial.println("[EDIT] Resetou varC (operadores) para 0");            // Limpa histórico de RFIDs para nova ordem
+            for (int i = 0; i < MAX_RFID_HISTORY; i++) {
+              rfidHistory[i] = \"\";
+            }
+            rfidHistoryIndex = 0;
+            Serial.println(\"[RFID] Limpou histórico de RFIDs para nova ordem\");            lastRfidValue = "Guardado: " + ordFromDatabase;
           } else if (currentRFIDReading.length() > 0) {
             Serial.println("[EDIT] Nenhuma correspondência encontrada na BD");
             lastRfidValue = "Nao encontrado";
@@ -702,6 +757,15 @@ void loop() {
       Serial.print("[RFID] Cartão lido: ");
       Serial.println(rfidRead);
       
+      // Verifica se é um RFID novo (nunca lido antes)
+      isNewRFID = true;
+      for (int i = 0; i < MAX_RFID_HISTORY; i++) {
+        if (rfidHistory[i] == rfidRead) {
+          isNewRFID = false;
+          break;
+        }
+      }
+      
       // Tenta fazer lookup na tabela "barcos"
       Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
       Serial.println(rfidRead);
@@ -713,6 +777,22 @@ void loop() {
         lastRfidValue = "Ord: " + result;
         Serial.print("[DB] Ordem encontrada: ");
         Serial.println(result);
+        
+        // Se é novo RFID, incrementa contador de operadores
+        if (isNewRFID) {
+          int currentCount = varC.toInt();
+          currentCount++;
+          updateVariable('C', String(currentCount));
+          
+          // Adiciona à history
+          rfidHistory[rfidHistoryIndex] = rfidRead;
+          rfidHistoryIndex = (rfidHistoryIndex + 1) % MAX_RFID_HISTORY;
+          
+          Serial.print("[RFID] Novo operador detectado! varC = ");
+          Serial.println(currentCount);
+        } else {
+          Serial.println("[RFID] RFID já lido antes - varC não incrementa");
+        }
       } else {
         lastRfidValue = "RFID nao existe";
         Serial.println("[DB] RFID não encontrado na BD");
@@ -734,8 +814,10 @@ void loop() {
   
   // Verifica timeout de edição (30 segundos)
   if (editState != STATE_NORMAL && (millis() - editModeStart) > EDIT_TIMEOUT) {
-    editState = STATE_NORMAL;
-    Serial.println("[EDIT] Saiu por timeout");
+    editState = STATE_NORMAL;    rfidReadingInProgress = false;
+    currentRFIDReading = \"\";
+    ordFromDatabase = \"\";
+    lastRfidValue = \"\";    Serial.println("[EDIT] Saiu por timeout");
   }
 
   // Atualiza estados anteriores

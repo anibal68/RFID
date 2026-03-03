@@ -88,6 +88,16 @@ int procurarEstacaoPorNome(String nome) {
   return -1;
 }
 
+// Busca ÍNDICE do array pela nome da estação
+int procurarIndiceEstacao(String nome) {
+  for (int i = 0; i < NUM_ESTACOES; i++) {
+    if (estacoes[i].nome == nome) {
+      return i;  // Retorna índice (0-49)
+    }
+  }
+  return 0;  // Default ao índice 0 se não encontrar
+}
+
 // Lista todas as estações no Serial (debug)
 void listarEstacoes() {
   Serial.println("\n===== ESTACOES DISPONIVEIS (50 TOTAL) =====");
