@@ -12,7 +12,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 // ESP32-S3 Pin Configuration
 #define SDA_PIN 16    // I2C SDA (GPIO16)
 #define SCL_PIN 17    // I2C SCL (GPIO17)
-#define BTN1 15       // Button 1 (GPIO15) - Enter
+#define BTN1 12       // Button 1 (GPIO12) - Wakeup button
 #define BTN2 13       // Button 2 (GPIO13)
 #define BTN3 14       // Button 3 (GPIO14)
 #define BAT_PIN 4     // Battery ADC (GPIO4)
@@ -63,12 +63,6 @@ struct Operator {
 };
 Operator operadores[MAX_OPERATORS];
 
-// ===== SISTEMA DE SELEÇÃO DE ESTAÇÕES =====
-bool seletando_estacao = false;  // Estado: em seleção?
-int estacao_selecionada = 0;     // Índice da estação atual (0-49)
-long btn1_press_time = 0;        // Tempo de pressão do BTN1 (Enter)
-const long LONG_PRESS_TIME = 2000; // 2 segundos para ativar seleção
-
 // Configuração NTP
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 0; // UTC
@@ -90,8 +84,8 @@ void goToSleep() {
   delay(1000);
   u8g2.setPowerSave(1); // Desliga o display para economizar energia
 
-  // NOTA: Desabilitado - GPIO12 é um pino crítico que causa reset
-  // esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 0);
+  // Configura despertar por GPIO12 (LOW level) - ESP32 clássico
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 0); // 0 = LOW level
 
   Serial.println("Indo para Deep Sleep agora...");
   Serial.flush();
@@ -165,19 +159,8 @@ void drawMainScreen() {
   drawWiFiIcon(cachedRssi);
   
   // Linha 2: Estação
-  // Se está selecionando, pisca "Est:" enquanto BTN1 está pressionado
-  if (seletando_estacao) {
-    // Pisca: alterna a cada 500ms
-    if ((millis() / 500) % 2 == 0) {
-      u8g2.drawStr(0, 20, "Est:");
-    }
-    // Sempre mostra a estação selecionada
-    u8g2.drawStr(30, 20, estacoes[estacao_selecionada].nome.c_str());
-  } else {
-    // Normal: mostra "Est:" e a variável A
-    u8g2.drawStr(0, 20, "Est:");
-    u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
-  }
+  u8g2.drawStr(0, 20, "Est:");
+  u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
   
   // Linha 3: Ordem de Produção
   u8g2.drawStr(0, 35, "Ord:");
@@ -245,20 +228,19 @@ int getBatteryPercentage() {
 
 void drawWiFiIcon(int rssi) {
   int x = 110;
-  int y = 0;  // Alinhado com bateria
+  int y = 10;
   if (WiFi.status() != WL_CONNECTED) {
     u8g2.drawStr(x, y, "X");
     return;
   }
-  // WiFi icon menos espesso (2 pixels de altura)
   if (rssi > -90)
-    u8g2.drawBox(x, y + 3, 2, 2);
+    u8g2.drawBox(x, y - 2, 2, 2);
   if (rssi > -80)
-    u8g2.drawBox(x + 3, y + 2, 2, 3);
+    u8g2.drawBox(x + 3, y - 4, 2, 4);
   if (rssi > -70)
-    u8g2.drawBox(x + 6, y + 1, 2, 4);
+    u8g2.drawBox(x + 6, y - 6, 2, 6);
   if (rssi > -60)
-    u8g2.drawBox(x + 9, y, 2, 5);
+    u8g2.drawBox(x + 9, y - 8, 2, 8);
 }
 
 // Helper to decode WiFi status
@@ -477,6 +459,7 @@ bool btn2LastState = HIGH;
 bool btn3LastState = HIGH;
 
 void loop() {
+  // Serial.print("L"); // Debug rápido para ver se o loop corre
   bool activity = false;
 
   // Lógica de detecção de borda (Trigger apenas no momento do clique)
@@ -484,59 +467,71 @@ void loop() {
   bool btn2State = digitalRead(BTN2);
   bool btn3State = digitalRead(BTN3);
 
-  // ===== SISTEMA DE SELEÇÃO DE ESTAÇÕES =====
-  
-  // BTN1 (Enter): Detecta pressão contínua para long press
-  if (btn1State == LOW) {
-    // Botão está pressionado
-    if (btn1LastState == HIGH) {
-      // Acabou de ser pressionado
-      btn1_press_time = millis();
-      Serial.println("[BTN1] Pressionado");
+  // Botão 1: Escreve na tabela "tempos"
+  if (btn1State == LOW && btn1LastState == HIGH) {
+    lastPressed = BTN1;
+    activity = true;
+
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 10, "Enviando Tempo...");
+    u8g2.sendBuffer();
+
+    JsonDocument data;
+    data["operador"] = "000747";
+    data["tempo"] = getFormattedTime();
+
+    if (supabaseGenericInsert("tempos", data)) {
+      u8g2.drawStr(0, 30, "Sucesso!");
+      updateVariable('C', "000747");
+    } else {
+      u8g2.drawStr(0, 30, "Erro!");
     }
-    
-    // Verifica se já passou de 2 segundos
-    long press_duration = millis() - btn1_press_time;
-    if (press_duration >= LONG_PRESS_TIME && !seletando_estacao) {
-      // Ativa modo seleção (apenas na primeira vez)
-      seletando_estacao = true;
-      // Inicializa com a posição de varA no array
-      if (varA != "") {
-        estacao_selecionada = procurarEstacaoPorNome(varA);
-        if (estacao_selecionada == -1) estacao_selecionada = 0;
-      } else {
-        estacao_selecionada = 0;
-      }
-      Serial.println("[EST] Modo seleção ATIVADO");
-    }
-  } else {
-    // Botão foi solto
-    if (btn1LastState == LOW && seletando_estacao) {
-      // Estava em modo seleção, agora confirma
-      updateVariable('A', estacoes[estacao_selecionada].nome);
-      seletando_estacao = false;
-      Serial.print("[EST] Confirmado: ");
-      Serial.println(estacoes[estacao_selecionada].nome);
-    }
+    u8g2.sendBuffer();
+    delay(2000);
   }
 
-  // Se está em modo de seleção:
-  if (seletando_estacao) {
-    // BTN2 (Cima): Anterior (circular)
-    if (btn2State == LOW && btn2LastState == HIGH) {
-      estacao_selecionada = (estacao_selecionada - 1 + NUM_ESTACOES) % NUM_ESTACOES;
-      activity = true;
-      Serial.print("[NAV] Anterior: ");
-      Serial.println(estacoes[estacao_selecionada].nome);
-    }
+  // Botão 2: Procura na tabela "barcos"
+  if (btn2State == LOW && btn2LastState == HIGH) {
+    lastPressed = BTN2;
+    activity = true;
 
-    // BTN3 (Baixo): Próxima (circular)
-    if (btn3State == LOW && btn3LastState == HIGH) {
-      estacao_selecionada = (estacao_selecionada + 1) % NUM_ESTACOES;
-      activity = true;
-      Serial.print("[NAV] Próxima: ");
-      Serial.println(estacoes[estacao_selecionada].nome);
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 10, "Buscando Barco...");
+    u8g2.sendBuffer();
+
+    String ordem =
+        supabaseGenericLookup("barcos", "barco", "01010", "ordem_fabrico");
+
+    u8g2.drawStr(0, 30, "Ordem:");
+    u8g2.drawStr(0, 50, ordem.c_str());
+    
+    if (ordem != "Nao encontrado") {
+      updateVariable('B', ordem);
     }
+    u8g2.sendBuffer();
+    delay(3000);
+  }
+
+  // Botão 3: Procura na tabela "operadores"
+  if (btn3State == LOW && btn3LastState == HIGH) {
+    lastPressed = BTN3;
+    activity = true;
+
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 10, "Buscando Operador...");
+    u8g2.sendBuffer();
+
+    String nome =
+        supabaseGenericLookup("operadores", "numero", "000747", "nome");
+
+    u8g2.drawStr(0, 30, "Nome:");
+    u8g2.drawStr(0, 50, nome.c_str());
+    
+    if (nome != "Nao encontrado") {
+      updateVariable('A', nome);
+    }
+    u8g2.sendBuffer();
+    delay(3000);
   }
 
   // Atualiza estados anteriores
