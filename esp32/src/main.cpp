@@ -565,6 +565,8 @@ void loop() {
   drawMainScreen();
 
   // Leitura NFC (Timeout reduzido para 30ms para resposta imediata dos botões)
+  // TEMPORARIAMENTE DESABILITADO PARA DIAGNOSTICAR
+  /*
   uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
   uint8_t uidLength;
   if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 30)) {
@@ -585,6 +587,7 @@ void loop() {
     u8g2.sendBuffer();
     delay(1500);
   }
+  */
 
   // Loop infinito - sem sleep
   delay(100); // Pequeno delay para evitar travamentos
