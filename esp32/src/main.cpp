@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include <Preferences.h>
 #include "../include/estacoes.h"
+#include <esp_task_wdt.h>
 
 // Configuração para OLED 1.3" (geralmente SH1106)
 // Se o seu display for SSD1306, mude SH1106 para SSD1306
@@ -12,7 +13,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 // ESP32-S3 Pin Configuration
 #define SDA_PIN 16    // I2C SDA (GPIO16)
 #define SCL_PIN 17    // I2C SCL (GPIO17)
-#define BTN1 12       // Button 1 (GPIO12) - Wakeup button
+#define BTN1 2        // Button 1 (GPIO2) - Enter/Selection - MANTÉM-SE SEGURO
 #define BTN2 13       // Button 2 (GPIO13)
 #define BTN3 14       // Button 3 (GPIO14)
 #define BAT_PIN 4     // Battery ADC (GPIO4)
@@ -90,8 +91,8 @@ void goToSleep() {
   delay(1000);
   u8g2.setPowerSave(1); // Desliga o display para economizar energia
 
-  // Configura despertar por GPIO12 (LOW level) - ESP32 clássico
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 0); // 0 = LOW level
+  // NOTA: Desabilitado - GPIO12 é um pino crítico que causa reset
+  // esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 0);
 
   Serial.println("Indo para Deep Sleep agora...");
   Serial.flush();
@@ -440,6 +441,9 @@ bool supabaseGenericInsert(String table, JsonDocument data) {
 void setup() {
   Serial.begin(115200);
   delay(100);
+
+  // Desabilita watchdog completamente (evita resets acidentais com GPIO12)
+  esp_task_wdt_deinit();
 
   // Inicializa Display primeiro mas fica em "silêncio" durante o WiFi
   Wire.begin(SDA_PIN, SCL_PIN);
