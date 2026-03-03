@@ -75,6 +75,25 @@ long lastRssiCheck = 0;
 int cachedRssi = -100;
 const long checkInterval = 10000; // 10 segundos
 
+// ===== SISTEMA DE EDIÇÃO =====
+enum EditState {
+  STATE_NORMAL = 0,      // Modo normal
+  STATE_SELECT_FIELD = 1, // Seleção de campo (Est, Ord, Op# piscando)
+  STATE_EDIT_VALUE = 2    // Edição de valor (variável piscando)
+};
+
+EditState editState = STATE_NORMAL;
+int selectedField = 0;  // 0=Est, 1=Ord, 2=Op#
+int currentEstacaoIndex = 0;  // Índice no array de estações (0-49)
+
+long editModeStart = 0;  // Quando entrou em modo edição
+const long EDIT_TIMEOUT = 30000; // 30 segundos (timeout edição)
+const long LONG_PRESS_DURATION = 2000; // 2 segundos para long press
+
+// Variables para detecção de long press
+long btn2PressStart = -1;  // Quando pressionou Enter
+bool btn2LongPressDetected = false;
+
 void goToSleep() {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
@@ -149,6 +168,63 @@ void updateVariable(char varName, String value) {
 // Forward declarations
 void drawBatteryIcon(int percentage);
 void drawWiFiIcon(int rssi);
+
+// Função auxiliar para piscar texto
+bool shouldBlink() {
+  return (millis() / 500) % 2;  // Pisca a cada 500ms
+}
+
+// Função para desenhar a tela de edição
+void drawEditScreen() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  
+  // Linha 1: Bateria e WiFi
+  drawBatteryIcon(cachedBattery);
+  drawWiFiIcon(cachedRssi);
+  
+  // Piscante do campo selecionado
+  bool blink = shouldBlink();
+  
+  // Linha 2: Estação (pisca se selecionado)
+  if (selectedField == 0 && blink) {
+    u8g2.drawStr(0, 20, "[Est: ]");
+    if (editState == STATE_EDIT_VALUE) {
+      // Mostra estação actual em edição
+      u8g2.drawStr(42, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());
+    } else {
+      u8g2.drawStr(30, 20, ">>>"); // Sinal de que pode editar
+    }
+  } else {
+    u8g2.drawStr(0, 20, "Est:");
+    if (editState == STATE_EDIT_VALUE && selectedField == 0) {
+      u8g2.drawStr(30, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());
+    } else {
+      u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
+    }
+  }
+  
+  // Linha 3: Ordem (pisca se selecionado)
+  if (selectedField == 1 && blink) {
+    u8g2.drawStr(0, 35, "[Ord:]");
+  } else {
+    u8g2.drawStr(0, 35, "Ord:");
+    u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
+  }
+  
+  // Linha 4: Operadores (pisca se selecionado)
+  if (selectedField == 2 && blink) {
+    u8g2.drawStr(0, 50, "[Op#:]");
+  } else {
+    u8g2.drawStr(0, 50, "Op#:");
+    u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+  }
+  
+  // Linha 5: Teste
+  u8g2.drawStr(0, 63, "Teste");
+  
+  u8g2.sendBuffer();
+}
 
 void drawMainScreen() {
   u8g2.clearBuffer();
@@ -228,19 +304,18 @@ int getBatteryPercentage() {
 
 void drawWiFiIcon(int rssi) {
   int x = 110;
-  int y = 10;
+  int y = 0;  // Movido para cima (alinhado com bateria)
   if (WiFi.status() != WL_CONNECTED) {
-    u8g2.drawStr(x, y, "X");
+    u8g2.drawStr(x, y + 8, "X");
     return;
   }
+  // Reduzido - apenas 3 linhas em vez de 4
   if (rssi > -90)
-    u8g2.drawBox(x, y - 2, 2, 2);
+    u8g2.drawBox(x, y + 2, 2, 2);
   if (rssi > -80)
-    u8g2.drawBox(x + 3, y - 4, 2, 4);
+    u8g2.drawBox(x + 3, y, 2, 4);
   if (rssi > -70)
-    u8g2.drawBox(x + 6, y - 6, 2, 6);
-  if (rssi > -60)
-    u8g2.drawBox(x + 9, y - 8, 2, 8);
+    u8g2.drawBox(x + 6, y - 2, 2, 4);
 }
 
 // Helper to decode WiFi status
@@ -460,88 +535,101 @@ bool btn3LastState = HIGH;
 
 void loop() {
   // Serial.print("L"); // Debug rápido para ver se o loop corre
-  bool activity = false;
 
   // Lógica de detecção de borda (Trigger apenas no momento do clique)
   bool btn1State = digitalRead(BTN1);
   bool btn2State = digitalRead(BTN2);
   bool btn3State = digitalRead(BTN3);
 
-  // Botão 1: Escreve na tabela "tempos"
-  if (btn1State == LOW && btn1LastState == HIGH) {
-    lastPressed = BTN1;
-    activity = true;
-
-    u8g2.clearBuffer();
-    u8g2.drawStr(0, 10, "Enviando Tempo...");
-    u8g2.sendBuffer();
-
-    JsonDocument data;
-    data["operador"] = "000747";
-    data["tempo"] = getFormattedTime();
-
-    if (supabaseGenericInsert("tempos", data)) {
-      u8g2.drawStr(0, 30, "Sucesso!");
-      updateVariable('C', "000747");
+  // ===== SISTEMA DE EDIÇÃO =====
+  
+  // Detecta LONG PRESS no Enter (BTN2)
+  if (btn2State == LOW && btn2PressStart == -1) {
+    btn2PressStart = millis();  // Marca o início do press
+    btn2LongPressDetected = false;
+  }
+  
+  if (btn2State == HIGH && btn2PressStart != -1) {
+    long pressDuration = millis() - btn2PressStart;
+    
+    if (pressDuration > LONG_PRESS_DURATION) {
+      // LONG PRESS - Entra em modo edição
+      if (editState == STATE_NORMAL) {
+        editState = STATE_SELECT_FIELD;
+        selectedField = 0;  // Começa em Est
+        currentEstacaoIndex = 0;  // Começa na 1ª estação
+        editModeStart = millis();
+        Serial.println("[EDIT] Entrou em modo edição");
+      }
     } else {
-      u8g2.drawStr(0, 30, "Erro!");
+      // SHORT PRESS - Confirma seleção
+      if (editState == STATE_SELECT_FIELD) {
+        editState = STATE_EDIT_VALUE;
+        editModeStart = millis();
+        Serial.println("[EDIT] Modo de edição da variável");
+      } else if (editState == STATE_EDIT_VALUE) {
+        // Confirma valor e sai
+        if (selectedField == 0) {
+          String estacaoSelecionada = procurarEstacao(currentEstacaoIndex + 1);
+          updateVariable('A', estacaoSelecionada);
+          Serial.print("[EDIT] Atribuiu Est: ");
+          Serial.println(estacaoSelecionada);
+        }
+        editState = STATE_SELECT_FIELD;  // Volta a seleccionar campo
+        editModeStart = millis();
+      }
     }
-    u8g2.sendBuffer();
-    delay(2000);
+    btn2PressStart = -1;  // Reset
   }
-
-  // Botão 2: Procura na tabela "barcos"
-  if (btn2State == LOW && btn2LastState == HIGH) {
-    lastPressed = BTN2;
-    activity = true;
-
-    u8g2.clearBuffer();
-    u8g2.drawStr(0, 10, "Buscando Barco...");
-    u8g2.sendBuffer();
-
-    String ordem =
-        supabaseGenericLookup("barcos", "barco", "01010", "ordem_fabrico");
-
-    u8g2.drawStr(0, 30, "Ordem:");
-    u8g2.drawStr(0, 50, ordem.c_str());
-    
-    if (ordem != "Nao encontrado") {
-      updateVariable('B', ordem);
+  
+  // BTN1 (Cima) - navega para trás no array
+  if (btn1State == LOW && btn1LastState == HIGH) {
+    if (editState != STATE_NORMAL) {
+      if (editState == STATE_SELECT_FIELD) {
+        // Roda entre Est, Ord, Op#
+        selectedField = (selectedField - 1 + 3) % 3;
+        editModeStart = millis();  // Reset timeout
+        Serial.print("[EDIT] Campo: ");
+        Serial.println(selectedField);
+      } else if (editState == STATE_EDIT_VALUE && selectedField == 0) {
+        // Navega no array para trás
+        currentEstacaoIndex = (currentEstacaoIndex - 1 + NUM_ESTACOES) % NUM_ESTACOES;
+        editModeStart = millis();  // Reset timeout
+        Serial.print("[EDIT] Estação anterior: ");
+        Serial.println(procurarEstacao(currentEstacaoIndex + 1));
+      }
     }
-    u8g2.sendBuffer();
-    delay(3000);
   }
-
-  // Botão 3: Procura na tabela "operadores"
+  
+  // BTN3 (Baixo) - navega para frente no array
   if (btn3State == LOW && btn3LastState == HIGH) {
-    lastPressed = BTN3;
-    activity = true;
-
-    u8g2.clearBuffer();
-    u8g2.drawStr(0, 10, "Buscando Operador...");
-    u8g2.sendBuffer();
-
-    String nome =
-        supabaseGenericLookup("operadores", "numero", "000747", "nome");
-
-    u8g2.drawStr(0, 30, "Nome:");
-    u8g2.drawStr(0, 50, nome.c_str());
-    
-    if (nome != "Nao encontrado") {
-      updateVariable('A', nome);
+    if (editState != STATE_NORMAL) {
+      if (editState == STATE_SELECT_FIELD) {
+        // Roda entre Est, Ord, Op#
+        selectedField = (selectedField + 1) % 3;
+        editModeStart = millis();  // Reset timeout
+        Serial.print("[EDIT] Campo: ");
+        Serial.println(selectedField);
+      } else if (editState == STATE_EDIT_VALUE && selectedField == 0) {
+        // Navega no array para frente
+        currentEstacaoIndex = (currentEstacaoIndex + 1) % NUM_ESTACOES;
+        editModeStart = millis();  // Reset timeout
+        Serial.print("[EDIT] Próxima estação: ");
+        Serial.println(procurarEstacao(currentEstacaoIndex + 1));
+      }
     }
-    u8g2.sendBuffer();
-    delay(3000);
+  }
+  
+  // Verifica timeout de edição (30 segundos)
+  if (editState != STATE_NORMAL && (millis() - editModeStart) > EDIT_TIMEOUT) {
+    editState = STATE_NORMAL;
+    Serial.println("[EDIT] Saiu por timeout");
   }
 
   // Atualiza estados anteriores
   btn1LastState = btn1State;
   btn2LastState = btn2State;
   btn3LastState = btn3State;
-
-  if (activity) {
-    lastActivityTime = millis();
-  }
 
   // Atualiza bateria e WiFi apenas a cada 10s para evitar lag
   if (millis() - lastBatteryCheck > checkInterval || lastBatteryCheck == 0) {
@@ -552,29 +640,11 @@ void loop() {
     }
   }
 
-  // ===== EXIBE TELA PRINCIPAL =====
-  drawMainScreen();
-
-  // Leitura NFC (Timeout reduzido para 30ms para resposta imediata dos botões)
-  uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
-  uint8_t uidLength;
-  if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 30)) {
-    activity = true;
-    String uidStr = "";
-    for (uint8_t i = 0; i < uidLength; i++) {
-      if (uid[i] < 0x10)
-        uidStr += "0";
-      uidStr += String(uid[i], HEX);
-    }
-    uidStr.toUpperCase();
-
-    u8g2.clearBuffer();
-    drawBatteryIcon(cachedBattery);
-    drawWiFiIcon(cachedRssi);
-    u8g2.drawStr(0, 30, "NFC:");
-    u8g2.drawStr(35, 30, uidStr.c_str());
-    u8g2.sendBuffer();
-    delay(1500);
+  // ===== EXIBE TELA APROPRIADA =====
+  if (editState != STATE_NORMAL) {
+    drawEditScreen();  // Tela de edição
+  } else {
+    drawMainScreen();  // Tela normal
   }
 
   // Loop infinito - sem sleep
