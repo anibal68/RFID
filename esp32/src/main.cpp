@@ -13,8 +13,8 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 #define SDA_PIN 16    // I2C SDA (GPIO16)
 #define SCL_PIN 17    // I2C SCL (GPIO17)
 #define BTN1 12       // Button 1 (GPIO12) - Wakeup button
-#define BTN2 13       // Button 2 (GPIO13)
-#define BTN3 14       // Button 3 (GPIO14)
+#define BTN2 14       // Button 2 (GPIO14)
+#define BTN3 13       // Button 3 (GPIO13)
 #define BAT_PIN 4     // Battery ADC (GPIO4)
 
 // Instância do PN532 via I2C (usando pinos dummy para IRQ e Reset para evitar
@@ -93,6 +93,16 @@ const long LONG_PRESS_DURATION = 2000; // 2 segundos para long press
 // Variables para detecção de long press
 long btn2PressStart = -1;  // Quando pressionou Enter
 bool btn2LongPressDetected = false;
+
+// Debug: último valor RFID lido
+String lastRfidValue = "";
+
+// Variáveis para leitura RFID em modo Ord
+String currentRFIDReading = "";  // RFID lido atualmente
+String ordFromDatabase = "";     // Ordem devolvida da base de dados
+long rfidReadStart = -1;         // Quando começou a tentar ler RFID
+const long RFID_READ_TIMEOUT = 5000; // 5 segundos para ler RFID
+bool rfidReadingInProgress = false;
 
 void goToSleep() {
   u8g2.clearBuffer();
@@ -186,42 +196,46 @@ void drawEditScreen() {
   // Piscante do campo selecionado
   bool blink = shouldBlink();
   
-  // Linha 2: Estação (pisca se selecionado)
+  // Linha 2: Estação (Est pisca se selecionado)
   if (selectedField == 0 && blink) {
-    u8g2.drawStr(0, 20, "[Est: ]");
-    if (editState == STATE_EDIT_VALUE) {
-      // Mostra estação actual em edição
-      u8g2.drawStr(42, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());
-    } else {
-      u8g2.drawStr(30, 20, ">>>"); // Sinal de que pode editar
-    }
-  } else {
+    // Pisca o texto "Est"
     u8g2.drawStr(0, 20, "Est:");
-    if (editState == STATE_EDIT_VALUE && selectedField == 0) {
-      u8g2.drawStr(30, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());
-    } else {
-      u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
-    }
+  } else if (selectedField != 0) {
+    u8g2.drawStr(0, 20, "Est:");
+  }
+  // Se selecionado e não piscar, não desenha nada (fica em branco)
+  
+  // Mostra o valor
+  if (editState == STATE_EDIT_VALUE && selectedField == 0) {
+    u8g2.drawStr(30, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());
+  } else {
+    u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
   }
   
-  // Linha 3: Ordem (pisca se selecionado)
+  // Linha 3: Ordem (Ord pisca se selecionado)
   if (selectedField == 1 && blink) {
-    u8g2.drawStr(0, 35, "[Ord:]");
-  } else {
+    // Pisca o texto "Ord"
     u8g2.drawStr(0, 35, "Ord:");
-    u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
+  } else if (selectedField != 1) {
+    u8g2.drawStr(0, 35, "Ord:");
   }
+  // Se selecionado e não piscar, não desenha nada (fica em branco)
   
-  // Linha 4: Operadores (pisca se selecionado)
+  u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
+  
+  // Linha 4: Operadores (Op# pisca se selecionado)
   if (selectedField == 2 && blink) {
-    u8g2.drawStr(0, 50, "[Op#:]");
-  } else {
+    // Pisca o texto "Op#"
     u8g2.drawStr(0, 50, "Op#:");
-    u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+  } else if (selectedField != 2) {
+    u8g2.drawStr(0, 50, "Op#:");
   }
+  // Se selecionado e não piscar, não desenha nada (fica em branco)
   
-  // Linha 5: Teste
-  u8g2.drawStr(0, 63, "Teste");
+  u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+  
+  // Linha 5: Debug - Valor RFID lido
+  u8g2.drawStr(0, 63, lastRfidValue.c_str());
   
   u8g2.sendBuffer();
 }
@@ -494,6 +508,30 @@ bool supabaseGenericInsert(String table, JsonDocument data) {
   }
 }
 
+// ===== FUNÇÕES DE LEITURA RFID =====
+// Lê um cartão RFID e retorna o UID como string hexadecimal
+String readRFIDCard() {
+  uint8_t success;
+  uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
+  uint8_t uidLength;
+
+  // Tenta ler um cartão passivo (timeout de 100ms para não travar)
+  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 100);
+
+  if (success) {
+    String rfidValue = "";
+    for (uint8_t i = 0; i < uidLength; i++) {
+      if (uid[i] < 0x10) rfidValue += "0";
+      rfidValue += String(uid[i], HEX);
+    }
+    Serial.print("[RFID] UID lido: ");
+    Serial.println(rfidValue);
+    return rfidValue;
+  }
+
+  return "";  // Nada lido
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
@@ -553,17 +591,36 @@ void loop() {
     long pressDuration = millis() - btn2PressStart;
     
     if (pressDuration > LONG_PRESS_DURATION) {
-      // LONG PRESS - Entra em modo edição
+      // LONG PRESS - Entra em modo edição OU sai rapidamente se já está em edit
       if (editState == STATE_NORMAL) {
         editState = STATE_SELECT_FIELD;
         selectedField = 0;  // Começa em Est
         currentEstacaoIndex = 0;  // Começa na 1ª estação
         editModeStart = millis();
+        rfidReadingInProgress = false;
+        currentRFIDReading = "";
         Serial.println("[EDIT] Entrou em modo edição");
+      } else if (editState != STATE_NORMAL) {
+        // LONG PRESS em modo edição = sair rapidamente
+        editState = STATE_NORMAL;
+        rfidReadingInProgress = false;
+        currentRFIDReading = "";
+        lastRfidValue = "";
+        Serial.println("[EDIT] Saiu rapidamente por LONG PRESS");
       }
     } else {
       // SHORT PRESS - Confirma seleção
       if (editState == STATE_SELECT_FIELD) {
+        // Entra em modo edição de valor específico
+        if (selectedField == 1) {
+          // Para Ord, inicia leitura RFID
+          rfidReadingInProgress = true;
+          rfidReadStart = millis();
+          currentRFIDReading = "";
+          ordFromDatabase = "";
+          lastRfidValue = "A ler RFID...";
+          Serial.println("[RFID] Iniciando leitura de cartão para Ord");
+        }
         editState = STATE_EDIT_VALUE;
         editModeStart = millis();
         Serial.println("[EDIT] Modo de edição da variável");
@@ -574,7 +631,20 @@ void loop() {
           updateVariable('A', estacaoSelecionada);
           Serial.print("[EDIT] Atribuiu Est: ");
           Serial.println(estacaoSelecionada);
+        } else if (selectedField == 1) {
+          // Para Ord, confirma o valor lido da base de dados
+          if (ordFromDatabase.length() > 0) {
+            updateVariable('B', ordFromDatabase);
+            Serial.print("[EDIT] Atribuiu Ord: ");
+            Serial.println(ordFromDatabase);
+            lastRfidValue = "Guardado: " + ordFromDatabase;
+          } else if (currentRFIDReading.length() > 0) {
+            Serial.println("[EDIT] Nenhuma correspondência encontrada na BD");
+            lastRfidValue = "Nao encontrado";
+          }
         }
+        rfidReadingInProgress = false;
+        currentRFIDReading = "";
         editState = STATE_SELECT_FIELD;  // Volta a seleccionar campo
         editModeStart = millis();
       }
@@ -619,6 +689,48 @@ void loop() {
       }
     }
   }
+
+  // ===== LEITURA RFID PARA CAMPO ORD =====
+  if (rfidReadingInProgress && selectedField == 1 && editState == STATE_EDIT_VALUE) {
+    // Tenta ler um cartão RFID
+    String rfidRead = readRFIDCard();
+    
+    if (rfidRead.length() > 0 && currentRFIDReading.length() == 0) {
+      // Cartão lido com sucesso
+      currentRFIDReading = rfidRead;
+      lastRfidValue = "RFID: " + rfidRead;
+      Serial.print("[RFID] Cartão lido: ");
+      Serial.println(rfidRead);
+      
+      // Tenta fazer lookup na tabela "barcos"
+      Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
+      Serial.println(rfidRead);
+      
+      String result = supabaseGenericLookup("barcos", "rfid", rfidRead, "ordem_fabrico");
+      
+      if (result != "Nao encontrado" && result != "Erro: Offline") {
+        ordFromDatabase = result;
+        lastRfidValue = "Ord: " + result;
+        Serial.print("[DB] Ordem encontrada: ");
+        Serial.println(result);
+      } else {
+        lastRfidValue = "RFID nao existe";
+        Serial.println("[DB] RFID não encontrado na BD");
+      }
+      
+      rfidReadingInProgress = false;  // Parou de tentar ler
+      editModeStart = millis();  // Reset timeout
+    }
+    
+    // Timeout: se passou 5 segundos sem ler nada
+    if ((millis() - rfidReadStart) > RFID_READ_TIMEOUT && currentRFIDReading.length() == 0) {
+      lastRfidValue = "Timeout leitura";
+      rfidReadingInProgress = false;
+      Serial.println("[RFID] Timeout - nenhum cartão lido");
+      editModeStart = millis();  // Reset timeout
+    }
+  }
+
   
   // Verifica timeout de edição (30 segundos)
   if (editState != STATE_NORMAL && (millis() - editModeStart) > EDIT_TIMEOUT) {
