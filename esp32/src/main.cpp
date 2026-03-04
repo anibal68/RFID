@@ -539,9 +539,20 @@ String supabaseGenericLookup(String table, String filterCol, String filterVal,
   if (WiFi.status() != WL_CONNECTED)
     return "Erro: Offline";
 
+  // Remove espaços em branco antes e depois
+  filterVal.trim();
+
   HTTPClient http;
   String url = String(supabase_url) + "/rest/v1/" + table + "?" + filterCol +
                "=eq." + filterVal;
+
+  // DEBUG: mostra a URL construída
+  Serial.print("[DB] URL: ");
+  Serial.println(url);
+  Serial.print("[DB] Procurando: ");
+  Serial.print(filterCol);
+  Serial.print("=");
+  Serial.println(filterVal);
 
   http.begin(url);
   http.addHeader("apikey", supabase_key);
@@ -552,15 +563,25 @@ String supabaseGenericLookup(String table, String filterCol, String filterVal,
 
   if (httpCode == 200) {
     String payload = http.getString();
+    Serial.print("[DB] Resposta 200: ");
+    Serial.println(payload);
+    
     JsonDocument doc;
     deserializeJson(doc, payload);
 
     if (doc.size() > 0) {
       result = doc[0][targetCol].as<String>();
+      Serial.print("[DB] Resultado encontrado: ");
+      Serial.println(result);
+    } else {
+      Serial.println("[DB] Nenhum resultado na resposta JSON");
     }
   } else {
+    String payload = http.getString();
     Serial.print("Erro GET em " + table + ": ");
     Serial.println(httpCode);
+    Serial.print("[DB] Resposta: ");
+    Serial.println(payload);
   }
   http.end();
   return result;
