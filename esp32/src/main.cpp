@@ -336,8 +336,8 @@ void drawBatteryIcon(int percentage) {
 // Retorna a porcentagem da bateria
 int getBatteryPercentage() {
   // O divisor de tensão divide por 2.
-  // Bateria 4.2V -> ADC vê 2.1V
-  // No ESP32-C3, o ADC tem range de 0-2500mV com atenuação de 11dB (padrão)
+  // Bateria 0% -> 3.8V -> ADC vê 1.9V (1900mV)
+  // Bateria 100% -> 4.1V -> ADC vê 2.05V (2050mV)
 
   long sum = 0;
   for (int i = 0; i < 10; i++) {
@@ -346,17 +346,12 @@ int getBatteryPercentage() {
   }
   int avgMv = sum / 10;
 
-  // Tensão da bateria = avgMv * 2 (devido ao divisor 1/2)
-  // Mas como o usuário disse que 100% seria 2.1V no pino, usamos 2100mV como
-  // referência. LiPo range: 3.0V (vazio) a 4.2V (cheio) No pino ADC (1/2): 1.5V
-  // (1500mV) a 2.1V (2100mV)
-
-  // Se o valor for absurdamente alto (acima de 2.3V) ou muito baixo,
-  // consideramos que não há bateria ou o pino está flutuando.
+  // Limites de segurança
   if (avgMv < 500 || avgMv > 2300)
     return 0;
 
-  int percentage = map(avgMv, 1500, 2100, 0, 100);
+  // Mapeamento: 1900mV (0%) a 2050mV (100%)
+  int percentage = map(avgMv, 1900, 2050, 0, 100);
   if (percentage > 100)
     percentage = 100;
   if (percentage < 0)
