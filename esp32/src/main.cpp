@@ -91,9 +91,9 @@ long lastStateChangeTime = 0;  // Para feedback visual melhorado da pisca
 const long EDIT_TIMEOUT = 30000; // 30 segundos (timeout edição)
 const long LONG_PRESS_DURATION = 2000; // 2 segundos para long press
 
-// Variables para detecção de long press
+// Variables para detecção de botão
 long btn2PressStart = -1;  // Quando pressionou Enter
-bool btn2LongPressDetected = false;
+bool btn2Pressed = false;   // Marcador de press anterior
 
 // Debug: último valor RFID lido
 String lastRfidValue = "";
@@ -104,6 +104,18 @@ String ordFromDatabase = "";      // Ordem devolvida da base de dados
 long rfidReadStart = -1;          // Quando começou a tentar ler RFID
 const long RFID_READ_TIMEOUT = 5000; // 5 segundos para primeira leitura
 bool rfidReadingInProgress = false;   // Flag para saber se está em modo leitura contínua
+
+// Variáveis para controlar display de mensagens Ord
+enum OrdDisplayMode {
+  ORD_DISPLAY_NORMAL = 0,    // Mostra valor fixo
+  ORD_DISPLAY_READING = 1,   // Mostra "... a ler" a piscar
+  ORD_DISPLAY_VERIFYING = 2, // Mostra "... verificar" a piscar
+  ORD_DISPLAY_NOT_FOUND = 3, // Mostra "não existe ord" fixo (2 seg)
+  ORD_DISPLAY_FOUND = 4      // Mostra valor encontrado a piscar
+};
+OrdDisplayMode ordDisplayMode = ORD_DISPLAY_NORMAL;
+long ordNotFoundTime = -1;  // Quando iniciou exibição "não existe ord"
+const long ORD_NOT_FOUND_DISPLAY_TIME = 2000; // 2 segundos
 
 // Tracking de RFIDs já lidos para contagem de operadores
 #define MAX_RFID_HISTORY 10
@@ -248,12 +260,33 @@ void drawEditScreen() {
     // Mostra o valor guardado (sempre visível)
     u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
   } else if (editState == STATE_EDIT_VALUE && selectedField == 1) {
-    // Modo edição de Ord: pisca o valor
+    // Modo edição de Ord: comportamento depende do modo de display
     u8g2.drawStr(0, 35, "Ord:");  // Rótulo sempre visível
-    if (blink) {
-      // Mostra o valor sendo lido (ou resultado da BD)
-      String displayOrd = ordFromDatabase.length() > 0 ? ordFromDatabase : "A ler...";
-      u8g2.drawStr(30, 35, displayOrd.c_str());  // Pisca
+    
+    String displayOrd = "";
+    bool shouldDisplay = true;
+    
+    if (ordDisplayMode == ORD_DISPLAY_READING) {
+      // Mostra "... a ler" a piscar
+      displayOrd = blink ? "... a ler" : "";
+    } else if (ordDisplayMode == ORD_DISPLAY_VERIFYING) {
+      // Mostra "... verificar" a piscar
+      displayOrd = blink ? "... verificar" : "";
+    } else if (ordDisplayMode == ORD_DISPLAY_NOT_FOUND) {
+      // Mostra "não existe ord" fixo (sem piscar)
+      displayOrd = "nao existe";
+      shouldDisplay = true;  // Sempre visível neste modo
+    } else if (ordDisplayMode == ORD_DISPLAY_FOUND) {
+      // Mostra o valor encontrado a piscar
+      displayOrd = blink ? ordFromDatabase : "";
+    } else {
+      // ORD_DISPLAY_NORMAL
+      displayOrd = ordFromDatabase.length() > 0 ? ordFromDatabase : "---";
+      shouldDisplay = true;
+    }
+    
+    if (shouldDisplay) {
+      u8g2.drawStr(30, 35, displayOrd.c_str());
     }
   } else {
     // Estado normal ou outro estado
@@ -633,129 +666,99 @@ void loop() {
   bool btn2State = digitalRead(BTN2);
   bool btn3State = digitalRead(BTN3);
 
-  // ===== SISTEMA DE EDIÇÃO =====
+  // ===== SISTEMA DE EDIÇÃO NOVO =====
   
-  // Detecta LONG PRESS no Enter (BTN2) - ENQUANTO está pressionado
-  if (btn2State == LOW && btn2PressStart == -1) {
-    btn2PressStart = millis();  // Marca o início do press
-    btn2LongPressDetected = false;
+  // Detecta SHORT PRESS no Enter (BTN2) - apenas ao libertar
+  if (btn2State == LOW && !btn2Pressed) {
+    btn2Pressed = true;  // Marca como pressionado
   }
   
-  // Deteta long press ENQUANTO a tecla está ainda pressionada (para feedback visual imediato)
-  if (btn2State == LOW && btn2PressStart != -1 && !btn2LongPressDetected) {
-    long pressDuration = millis() - btn2PressStart;
+  // Processa a libertação da tecla (SHORT PRESS)
+  if (btn2State == HIGH && btn2Pressed) {
+    btn2Pressed = false;  // Reset
     
-    if (pressDuration > LONG_PRESS_DURATION) {
-      // LONG PRESS detectado - Inicia modo edição do campo selecionado
-      btn2LongPressDetected = true;  // Marca como já tratado
-      
-      if (editState == STATE_NORMAL) {
-        // Entra em modo seleção de campo
-        editState = STATE_SELECT_FIELD;
-        selectedField = 0;  // Começa em Est
-        currentEstacaoIndex = procurarIndiceEstacao(varA);
+    if (editState == STATE_NORMAL) {
+      // Entra em modo seleção de campo
+      editState = STATE_SELECT_FIELD;
+      selectedField = 0;  // Começa em Est
+      currentEstacaoIndex = procurarIndiceEstacao(varA);
+      editModeStart = millis();
+      lastStateChangeTime = millis();
+      rfidReadingInProgress = false;
+      lastRFIDSuccess = "";
+      Serial.println("[EDIT] Entrou em modo seleção de campo (Est)");
+    } else if (editState == STATE_SELECT_FIELD) {
+      // Confirmação do campo selecionado
+      if (selectedField == 0) {
+        // Est: entra em EDIT_VALUE com navegação
+        editState = STATE_EDIT_VALUE;
         editModeStart = millis();
-        lastStateChangeTime = millis();  // Feedback visual
-        rfidReadingInProgress = false;
+        lastStateChangeTime = millis();
+        Serial.println("[EDIT] Entrou em modo edição de Estação");
+      } else if (selectedField == 1) {
+        // Ord: inicia leitura RFID contínua
+        editState = STATE_EDIT_VALUE;
+        rfidReadingInProgress = true;
+        rfidReadStart = millis();
         lastRFIDSuccess = "";
-        Serial.println("[EDIT] Entrou em modo edição");
-      } else if (editState == STATE_SELECT_FIELD) {
-        // Já em seleção: passa para EDIT do campo selecionado (faz piscar o valor)
-        if (selectedField == 1) {
-          // Para Ord, inicia leitura RFID contínua
-          rfidReadingInProgress = true;
-          rfidReadStart = millis();
-          lastRFIDSuccess = "";
-          ordFromDatabase = "";
-          lastRfidValue = "A ler RFID...";
-          Serial.println("[RFID] Iniciando leitura contínua de cartões para Ord");
-        }
+        ordFromDatabase = "";
+        ordDisplayMode = ORD_DISPLAY_READING;  // Começa com "... a ler"
+        editModeStart = millis();
+        lastStateChangeTime = millis();
+        Serial.println("[EDIT] Entrou em modo edição de Ordem - Iniciando leitura RFID");
+      } else if (selectedField == 2) {
+        // Op#: para futuro (ainda não implementado)
         editState = STATE_EDIT_VALUE;
         editModeStart = millis();
-        lastStateChangeTime = millis();  // Feedback visual
-        Serial.println("[EDIT] Modo de edição do campo");
+        lastStateChangeTime = millis();
+        Serial.println("[EDIT] Entrou em modo edição de Op#");
       }
-    }
-  }
-  
-  // Processa a libertação da tecla (short press ou saída de long press)
-  if (btn2State == HIGH && btn2PressStart != -1) {
-    long pressDuration = millis() - btn2PressStart;
-    
-    if (pressDuration <= LONG_PRESS_DURATION) {
-      // SHORT PRESS - Confirma seleção
-      if (editState == STATE_SELECT_FIELD) {
-        // Entra em modo edição de valor específico
-        if (selectedField == 1) {
-          // Para Ord, inicia leitura RFID contínua
-          rfidReadingInProgress = true;
-          rfidReadStart = millis();
-          lastRFIDSuccess = "";
-          ordFromDatabase = "";
-          lastRfidValue = "A ler RFID...";
-          Serial.println("[RFID] Iniciando leitura contínua de cartões para Ord");
+    } else if (editState == STATE_EDIT_VALUE) {
+      // Confirmação do valor
+      if (selectedField == 0) {
+        // Est: confirma valor e sai de edição
+        String estacaoSelecionada = procurarEstacao(currentEstacaoIndex + 1);
+        updateVariable('A', estacaoSelecionada);
+        updateVariable('C', "0");
+        for (int i = 0; i < MAX_RFID_HISTORY; i++) {
+          rfidHistory[i] = "";
         }
-        editState = STATE_EDIT_VALUE;
-        editModeStart = millis();
-        lastStateChangeTime = millis();  // Feedback visual
-        Serial.println("[EDIT] Modo de edição da variável");
-      } else if (editState == STATE_EDIT_VALUE) {
-        // Confirma valor e volta para seleção de campo
-        if (selectedField == 0) {
-          String estacaoSelecionada = procurarEstacao(currentEstacaoIndex + 1);
-          updateVariable('A', estacaoSelecionada);
-          // Reset do contador de operadores quando muda estação
+        rfidHistoryIndex = 0;
+        editState = STATE_NORMAL;
+        rfidReadingInProgress = false;
+        Serial.print("[EDIT] Confirmou estação: ");
+        Serial.println(estacaoSelecionada);
+        Serial.println("[EDIT] Voltou ao modo normal");
+      } else if (selectedField == 1) {
+        // Ord: se BD encontrou valor, confirma e sai; se não encontrou, volta a ler
+        rfidReadingInProgress = false;
+        if (ordFromDatabase.length() > 0) {
+          // Confirma o valor encontrado e sai de edição
+          updateVariable('B', ordFromDatabase);
           updateVariable('C', "0");
-          Serial.print("[EDIT] Atribuiu Est: ");
-          Serial.println(estacaoSelecionada);
-          Serial.println("[EDIT] Resetou varC (operadores) para 0");
-          // Limpa histórico de RFIDs para nova estação
           for (int i = 0; i < MAX_RFID_HISTORY; i++) {
             rfidHistory[i] = "";
           }
           rfidHistoryIndex = 0;
-          Serial.println("[RFID] Limpou histórico de RFIDs para nova estação");
-        } else if (selectedField == 1) {
-          // Para Ord, confirma o valor lido da base de dados (último com sucesso)
-          rfidReadingInProgress = false;  // Para de ler RFID
-          if (ordFromDatabase.length() > 0) {
-            updateVariable('B', ordFromDatabase);
-            // Reset do contador de operadores quando muda ordem
-            updateVariable('C', "0");
-            Serial.print("[EDIT] Atribuiu Ord: ");
-            Serial.println(ordFromDatabase);
-            Serial.println("[EDIT] Resetou varC (operadores) para 0");
-            // Limpa histórico de RFIDs para nova ordem
-            for (int i = 0; i < MAX_RFID_HISTORY; i++) {
-              rfidHistory[i] = "";
-            }
-            rfidHistoryIndex = 0;
-            Serial.println("[RFID] Limpou histórico de RFIDs para nova ordem");
-            lastRfidValue = "Guardado: " + ordFromDatabase;
-          } else if (lastRFIDSuccess.length() > 0) {
-            Serial.println("[EDIT] Nenhuma correspondência encontrada na BD");
-            lastRfidValue = "Nao encontrado";
-          }
+          editState = STATE_NORMAL;
+          ordDisplayMode = ORD_DISPLAY_NORMAL;
+          Serial.print("[EDIT] Confirmou ordem: ");
+          Serial.println(ordFromDatabase);
+          Serial.println("[EDIT] Voltou ao modo normal");
+        } else {
+          // Nenhum valor encontrado ainda - volta a ler
+          rfidReadingInProgress = true;
+          rfidReadStart = millis();
+          ordDisplayMode = ORD_DISPLAY_READING;
+          Serial.println("[EDIT] Nenhuma ordem encontrada, voltou a ler");
         }
+      } else if (selectedField == 2) {
+        // Op#: confirma e sai (por implementar)
+        editState = STATE_NORMAL;
         rfidReadingInProgress = false;
-        lastRFIDSuccess = "";
-        editState = STATE_SELECT_FIELD;  // Volta a seleccionar campo
-        editModeStart = millis();
-        lastStateChangeTime = millis();  // Feedback visual
-      }
-    } else {
-      // LONG PRESS libertado - Volta para SELECT_FIELD (deixa de piscar mas mantém edit mode)
-      if (editState == STATE_EDIT_VALUE) {
-        rfidReadingInProgress = false;  // Para leitura RFID se estivesse ativa
-        lastRFIDSuccess = "";
-        editState = STATE_SELECT_FIELD;  // Volta a seleccionar campo, deixa de piscar
-        editModeStart = millis();
-        lastStateChangeTime = millis();  // Feedback visual
-        Serial.println("[EDIT] Volta a SELECT_FIELD após libertação de LONG PRESS");
+        Serial.println("[EDIT] Confirmou Op#");
       }
     }
-    btn2PressStart = -1;  // Reset
-    btn2LongPressDetected = false;
   }
   
   // BTN1 (Cima) - navega para trás no array
@@ -808,7 +811,7 @@ void loop() {
       if (lastRFIDSuccess != rfidRead) {
         // Novo RFID (diferente do anterior)
         lastRFIDSuccess = rfidRead;
-        lastRfidValue = "RFID: " + rfidRead;
+        ordDisplayMode = ORD_DISPLAY_VERIFYING;  // Muda para "... verificar"
         Serial.print("[RFID] Cartão lido: ");
         Serial.println(rfidRead);
         
@@ -824,13 +827,13 @@ void loop() {
         // Tenta fazer lookup na tabela "barcos"
         Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
         Serial.println(rfidRead);
-        lastRfidValue = "A verificar...";  // Feedback visual durante lookup
         
         String result = supabaseGenericLookup("barcos", "rfid", rfidRead, "ordem_fabrico");
         
         if (result != "Nao encontrado" && result != "Erro: Offline") {
+          // Ordem encontrada!
           ordFromDatabase = result;
-          lastRfidValue = "Ord: " + result;
+          ordDisplayMode = ORD_DISPLAY_FOUND;  // Muda para mostrar valor a piscar
           Serial.print("[DB] Ordem encontrada: ");
           Serial.println(result);
           
@@ -850,12 +853,28 @@ void loop() {
             Serial.println("[RFID] RFID já lido antes - varC não incrementa");
           }
         } else {
-          lastRfidValue = "RFID nao existe";
+          // Ordem não encontrada
+          ordDisplayMode = ORD_DISPLAY_NOT_FOUND;  // Muda para "não existe ord"
+          ordNotFoundTime = millis();  // Marca o tempo de início
+          ordFromDatabase = "";  // Limpa o valor
           Serial.println("[DB] RFID não encontrado na BD");
         }
       }
       // Continua tentando ler (não para após o 1º)
       editModeStart = millis();  // Reset de timeout a cada leitura bem-sucedida
+    }
+  }
+  
+  // ===== CONTROLE DE EXIBIÇÃO "NÃO EXISTE ORD" =====
+  // Se estamos exibindo "não existe ord", aguarda 2 segundos e volta a "... a ler"
+  if (ordDisplayMode == ORD_DISPLAY_NOT_FOUND && ordNotFoundTime != -1) {
+    if ((millis() - ordNotFoundTime) > ORD_NOT_FOUND_DISPLAY_TIME) {
+      // Passou 2 segundos, volta a tentar ler
+      ordDisplayMode = ORD_DISPLAY_READING;
+      ordFromDatabase = "";
+      lastRFIDSuccess = "";
+      ordNotFoundTime = -1;
+      Serial.println("[RFID] Voltou a tentar ler após 2 segundos");
     }
   }
 
