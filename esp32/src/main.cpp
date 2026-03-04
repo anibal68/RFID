@@ -321,7 +321,8 @@ void drawBatteryIcon(int percentage) {
   int x = 0;
   int y = 0;
   int w = 14;
-  int h = 6;  // Reduzido de 10 para 6
+  int h = 6;  // Altura do símbolo
+  
   // Corpo da bateria
   u8g2.drawFrame(x, y, w, h);
   // Ponta da bateria
@@ -331,6 +332,12 @@ void drawBatteryIcon(int percentage) {
     int fill = map(percentage, 0, 100, 0, w - 2);
     u8g2.drawBox(x + 1, y + 1, fill, h - 2);
   }
+  
+  // Mostra percentagem ao lado do símbolo (mesma altura)
+  u8g2.setFont(u8g2_font_tom_thumb_4x6_mr);  // Fonte pequena (altura ~6px)
+  char batStr[5];
+  sprintf(batStr, "%d%%", percentage);
+  u8g2.drawStr(x + w + 6, y + 6, batStr);  // Alinhado à direita do símbolo
 }
 
 // Retorna a porcentagem da bateria
