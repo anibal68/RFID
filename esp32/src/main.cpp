@@ -15,7 +15,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 #define BTN1 12       // Button 1 (GPIO12) - Wakeup button
 #define BTN2 14       // Button 2 (GPIO14)
 #define BTN3 13       // Button 3 (GPIO13)
-#define BAT_PIN 4     // Battery ADC (GPIO4)
+#define BAT_PIN 34     // Battery ADC (GPIO34 - ADC1, sem conflito com WiFi)
 
 // Instância do PN532 via I2C (usando pinos dummy para IRQ e Reset para evitar
 // conflito com SDA/SCL)
@@ -333,11 +333,14 @@ void drawBatteryIcon(int percentage) {
     u8g2.drawBox(x + 1, y + 1, fill, h - 2);
   }
   
-  // Mostra percentagem ao lado do símbolo (mesma altura)
-  u8g2.setFont(u8g2_font_tom_thumb_4x6_mr);  // Fonte pequena (altura ~6px)
+  // Mostra percentagem ao lado do símbolo (fonte pequena)
+  u8g2.setFont(u8g2_font_tom_thumb_4x6_mr);  // Fonte pequena para percentagem
   char batStr[5];
   sprintf(batStr, "%d%%", percentage);
   u8g2.drawStr(x + w + 6, y + 6, batStr);  // Alinhado à direita do símbolo
+  
+  // Restaura a fonte anterior para o resto
+  u8g2.setFont(u8g2_font_ncenB08_tr);
 }
 
 // Retorna a porcentagem da bateria
