@@ -630,37 +630,54 @@ void loop() {
 
   // ===== SISTEMA DE EDIÇÃO =====
   
-  // Detecta LONG PRESS no Enter (BTN2)
+  // Detecta LONG PRESS no Enter (BTN2) - ENQUANTO está pressionado
   if (btn2State == LOW && btn2PressStart == -1) {
     btn2PressStart = millis();  // Marca o início do press
     btn2LongPressDetected = false;
   }
   
-  if (btn2State == HIGH && btn2PressStart != -1) {
+  // Deteta long press ENQUANTO a tecla está ainda pressionada (para feedback visual imediato)
+  if (btn2State == LOW && btn2PressStart != -1 && !btn2LongPressDetected) {
     long pressDuration = millis() - btn2PressStart;
     
     if (pressDuration > LONG_PRESS_DURATION) {
-      // LONG PRESS - Entra em modo edição OU sai rapidamente se já está em edit
+      // LONG PRESS detectado - Inicia modo edição do campo selecionado
+      btn2LongPressDetected = true;  // Marca como já tratado
+      
       if (editState == STATE_NORMAL) {
+        // Entra em modo seleção de campo
         editState = STATE_SELECT_FIELD;
         selectedField = 0;  // Começa em Est
-        // Inicializa o índice com a posição atual da estação
         currentEstacaoIndex = procurarIndiceEstacao(varA);
         editModeStart = millis();
         lastStateChangeTime = millis();  // Feedback visual
         rfidReadingInProgress = false;
         lastRFIDSuccess = "";
         Serial.println("[EDIT] Entrou em modo edição");
-      } else if (editState != STATE_NORMAL) {
-        // LONG PRESS em modo edição = sair rapidamente
-        editState = STATE_NORMAL;
-        rfidReadingInProgress = false;
-        lastRFIDSuccess = "";
-        ordFromDatabase = "";
-        lastRfidValue = "";
-        Serial.println("[EDIT] Saiu rapidamente por LONG PRESS");
+      } else if (editState == STATE_SELECT_FIELD) {
+        // Já em seleção: passa para EDIT do campo selecionado (faz piscar o valor)
+        if (selectedField == 1) {
+          // Para Ord, inicia leitura RFID contínua
+          rfidReadingInProgress = true;
+          rfidReadStart = millis();
+          lastRFIDSuccess = "";
+          ordFromDatabase = "";
+          lastRfidValue = "A ler RFID...";
+          Serial.println("[RFID] Iniciando leitura contínua de cartões para Ord");
+        }
+        editState = STATE_EDIT_VALUE;
+        editModeStart = millis();
+        lastStateChangeTime = millis();  // Feedback visual
+        Serial.println("[EDIT] Modo de edição do campo");
       }
-    } else {
+    }
+  }
+  
+  // Processa a libertação da tecla (short press ou saída de long press)
+  if (btn2State == HIGH && btn2PressStart != -1) {
+    long pressDuration = millis() - btn2PressStart;
+    
+    if (pressDuration <= LONG_PRESS_DURATION) {
       // SHORT PRESS - Confirma seleção
       if (editState == STATE_SELECT_FIELD) {
         // Entra em modo edição de valor específico
@@ -671,14 +688,14 @@ void loop() {
           lastRFIDSuccess = "";
           ordFromDatabase = "";
           lastRfidValue = "A ler RFID...";
-          Serial.println("[RFID] Iniciano leitura contínua de cartões para Ord");
+          Serial.println("[RFID] Iniciando leitura contínua de cartões para Ord");
         }
         editState = STATE_EDIT_VALUE;
         editModeStart = millis();
         lastStateChangeTime = millis();  // Feedback visual
         Serial.println("[EDIT] Modo de edição da variável");
       } else if (editState == STATE_EDIT_VALUE) {
-        // Confirma valor e sai
+        // Confirma valor e volta para seleção de campo
         if (selectedField == 0) {
           String estacaoSelecionada = procurarEstacao(currentEstacaoIndex + 1);
           updateVariable('A', estacaoSelecionada);
@@ -721,8 +738,19 @@ void loop() {
         editModeStart = millis();
         lastStateChangeTime = millis();  // Feedback visual
       }
+    } else {
+      // LONG PRESS libertado - Volta para SELECT_FIELD (deixa de piscar mas mantém edit mode)
+      if (editState == STATE_EDIT_VALUE) {
+        rfidReadingInProgress = false;  // Para leitura RFID se estivesse ativa
+        lastRFIDSuccess = "";
+        editState = STATE_SELECT_FIELD;  // Volta a seleccionar campo, deixa de piscar
+        editModeStart = millis();
+        lastStateChangeTime = millis();  // Feedback visual
+        Serial.println("[EDIT] Volta a SELECT_FIELD após libertação de LONG PRESS");
+      }
     }
     btn2PressStart = -1;  // Reset
+    btn2LongPressDetected = false;
   }
   
   // BTN1 (Cima) - navega para trás no array
@@ -791,6 +819,7 @@ void loop() {
         // Tenta fazer lookup na tabela "barcos"
         Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
         Serial.println(rfidRead);
+        lastRfidValue = "A verificar...";  // Feedback visual durante lookup
         
         String result = supabaseGenericLookup("barcos", "rfid", rfidRead, "ordem_fabrico");
         
@@ -832,7 +861,7 @@ void loop() {
     rfidReadingInProgress = false;
     lastRFIDSuccess = "";
     ordFromDatabase = "";
-    lastRfidValue = "";
+    // Mantém lastRfidValue com o último valor para feedback ao sair
     Serial.println("[EDIT] Saiu por timeout");
   }
 
