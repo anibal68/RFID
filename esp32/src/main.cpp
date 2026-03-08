@@ -117,6 +117,11 @@ OrdDisplayMode ordDisplayMode = ORD_DISPLAY_NORMAL;
 long ordNotFoundTime = -1;  // Quando iniciou exibição "não existe ord"
 const long ORD_NOT_FOUND_DISPLAY_TIME = 2000; // 2 segundos
 
+// Variáveis para controlar delay da lookup (deixar mostrar "... verificar")
+bool ordLookupPending = false;  // Flag para aguardar antes de fazer lookup
+long ordLookupStartTime = -1;   // Quando começou o delay
+const long ORD_LOOKUP_DELAY = 500; // 500ms antes de fazer a lookup
+
 // Tracking de RFIDs já lidos para contagem de operadores
 #define MAX_RFID_HISTORY 10
 String rfidHistory[MAX_RFID_HISTORY];   // Último RFID lido
@@ -147,6 +152,11 @@ OpDisplayMode opDisplayMode = OP_DISPLAY_NORMAL;
 long opNotFoundTime = -1;
 const long OP_NOT_FOUND_DISPLAY_TIME = 2000;
 bool opReadingInProgress = false;
+
+// Variáveis para controlar delay da lookup (deixar mostrar "... verificar")
+bool opLookupPending = false;  // Flag para aguardar antes de fazer lookup
+long opLookupStartTime = -1;   // Quando começou o delay
+const long OP_LOOKUP_DELAY = 500; // 500ms antes de fazer a lookup
 
 // Controle de exibição "Olá nome do operador"
 long opGreetingStartTime = -1;
@@ -955,56 +965,38 @@ void loop() {
         // Novo RFID (diferente do anterior)
         lastRFIDSuccess = rfidRead;
         ordDisplayMode = ORD_DISPLAY_VERIFYING;  // Muda para "... verificar"
+        ordLookupPending = true;  // Marca para fazer lookup depois
+        ordLookupStartTime = millis();  // Inicia o delay
         Serial.print("[RFID] Cartão lido: ");
         Serial.println(rfidRead);
-        
-        // Verifica se é um RFID novo (nunca lido antes)
-        isNewRFID = true;
-        for (int i = 0; i < MAX_RFID_HISTORY; i++) {
-          if (rfidHistory[i] == rfidRead) {
-            isNewRFID = false;
-            break;
-          }
-        }
-        
-        // Tenta fazer lookup na tabela "barcos"
-        Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
-        Serial.println(rfidRead);
-        
-        String result = supabaseGenericLookup("barcos", "rfid", rfidRead, "ordem_fabrico");
-        
-        if (result != "Nao encontrado" && result != "Erro: Offline") {
-          // Ordem encontrada!
-          ordFromDatabase = result;
-          ordDisplayMode = ORD_DISPLAY_FOUND;  // Muda para mostrar valor a piscar
-          Serial.print("[DB] Ordem encontrada: ");
-          Serial.println(result);
-          
-          // Se é novo RFID, incrementa contador de operadores
-          if (isNewRFID) {
-            int currentCount = varC.toInt();
-            currentCount++;
-            updateVariable('C', String(currentCount));
-            
-            // Adiciona à history
-            rfidHistory[rfidHistoryIndex] = rfidRead;
-            rfidHistoryIndex = (rfidHistoryIndex + 1) % MAX_RFID_HISTORY;
-            
-            Serial.print("[RFID] Novo operador detectado! varC = ");
-            Serial.println(currentCount);
-          } else {
-            Serial.println("[RFID] RFID já lido antes - varC não incrementa");
-          }
-        } else {
-          // Ordem não encontrada
-          ordDisplayMode = ORD_DISPLAY_NOT_FOUND;  // Muda para "não existe ord"
-          ordNotFoundTime = millis();  // Marca o tempo de início
-          ordFromDatabase = "";  // Limpa o valor
-          Serial.println("[DB] RFID não encontrado na BD");
-        }
       }
       // Continua tentando ler (não para após o 1º)
       editModeStart = millis();  // Reset de timeout a cada leitura bem-sucedida
+    }
+  }
+  
+  // ===== PROCESSAR LOOKUP DE ORD APÓS DELAY =====
+  if (ordLookupPending && (millis() - ordLookupStartTime) > ORD_LOOKUP_DELAY) {
+    // Agora faz o lookup (depois de mostrar "verificar")
+    ordLookupPending = false;
+    
+    Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
+    Serial.println(lastRFIDSuccess);
+    
+    String result = supabaseGenericLookup("barcos", "rfid", lastRFIDSuccess, "ordem_fabrico");
+    
+    if (result != "Nao encontrado" && result != "Erro: Offline") {
+      // Ordem encontrada!
+      ordFromDatabase = result;
+      ordDisplayMode = ORD_DISPLAY_FOUND;  // Muda para mostrar valor a piscar
+      Serial.print("[DB] Ordem encontrada: ");
+      Serial.println(result);
+    } else {
+      // Ordem não encontrada
+      ordDisplayMode = ORD_DISPLAY_NOT_FOUND;  // Muda para "não existe ord"
+      ordNotFoundTime = millis();  // Marca o tempo de início
+      ordFromDatabase = "";  // Limpa o valor
+      Serial.println("[DB] RFID não encontrado na BD");
     }
   }
   
@@ -1032,61 +1024,69 @@ void loop() {
         // Novo RFID (diferente do anterior)
         lastRFIDOperador = rfidRead;
         opDisplayMode = OP_DISPLAY_VERIFYING;  // Muda para "... verificar"
+        opLookupPending = true;  // Marca para fazer lookup depois
+        opLookupStartTime = millis();  // Inicia o delay
         Serial.print("[RFID-OP] Cartão lido: ");
         Serial.println(rfidRead);
-        
-        // Tenta fazer lookup na tabela "operadores"
-        Serial.print("[DB] Procurando operador com rfid=");
-        Serial.println(rfidRead);
-        
-        String result = supabaseGenericLookup("operadores", "rfid", rfidRead, "nome");
-        String opNumero = supabaseGenericLookup("operadores", "rfid", rfidRead, "numero");
-        
-        if (result != "Nao encontrado" && result != "Erro: Offline") {
-          // Operador encontrado!
-          operadorFromDatabase = opNumero + " - " + result;
-          opDisplayMode = OP_DISPLAY_FOUND;  // Muda para mostrar valor a piscar
-          Serial.print("[DB] Operador encontrado: ");
-          Serial.println(operadorFromDatabase);
-          
-          // Verifica se é um operador novo (não foi lido antes nesta sessão)
-          bool isNewOperador = true;
-          for (int i = 0; i < operadoresLidosCount; i++) {
-            if (operadoresLidos[i].numero == opNumero) {
-              isNewOperador = false;
-              Serial.print("[RFID-OP] Operador já lido: ");
-              Serial.println(opNumero);
-              break;
-            }
-          }
-          
-          // Se é novo, adiciona ao array
-          if (isNewOperador && operadoresLidosCount < MAX_OPERADORES_LIDOS) {
-            operadoresLidos[operadoresLidosCount].numero = opNumero;
-            operadoresLidos[operadoresLidosCount].nome = result;
-            operadoresLidosCount++;
-            
-            // Inicia greeting
-            opGreetingStartTime = millis();
-            opGreetingName = result;
-            
-            Serial.print("[RFID-OP] NOVO Operador #");
-            Serial.print(operadoresLidosCount);
-            Serial.print(": ");
-            Serial.println(operadorFromDatabase);
-          } else if (operadoresLidosCount >= MAX_OPERADORES_LIDOS) {
-            Serial.println("[RFID-OP] Array de operadores cheio!");
-          }
-        } else {
-          // Operador não encontrado
-          opDisplayMode = OP_DISPLAY_NOT_FOUND;
-          opNotFoundTime = millis();
-          operadorFromDatabase = "";
-          Serial.println("[DB] RFID não encontrado na BD operadores");
-        }
       }
       // Continua tentando ler
       editModeStart = millis();  // Reset de timeout a cada leitura bem-sucedida
+    }
+  }
+  
+  // ===== PROCESSAR LOOKUP DE OP# APÓS DELAY =====
+  if (opLookupPending && (millis() - opLookupStartTime) > OP_LOOKUP_DELAY) {
+    // Agora faz o lookup (depois de mostrar "verificar")
+    opLookupPending = false;
+    
+    // Tenta fazer lookup na tabela "operadores"
+    Serial.print("[DB] Procurando operador com rfid=");
+    Serial.println(lastRFIDOperador);
+    
+    String result = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "nome");
+    String opNumero = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "numero");
+    
+    if (result != "Nao encontrado" && result != "Erro: Offline") {
+      // Operador encontrado!
+      operadorFromDatabase = opNumero + " - " + result;
+      opDisplayMode = OP_DISPLAY_FOUND;  // Muda para mostrar valor a piscar
+      Serial.print("[DB] Operador encontrado: ");
+      Serial.println(operadorFromDatabase);
+      
+      // Verifica se é um operador novo (não foi lido antes nesta sessão)
+      bool isNewOperador = true;
+      for (int i = 0; i < operadoresLidosCount; i++) {
+        if (operadoresLidos[i].numero == opNumero) {
+          isNewOperador = false;
+          Serial.print("[RFID-OP] Operador já lido: ");
+          Serial.println(opNumero);
+          break;
+        }
+      }
+      
+      // Se é novo, adiciona ao array
+      if (isNewOperador && operadoresLidosCount < MAX_OPERADORES_LIDOS) {
+        operadoresLidos[operadoresLidosCount].numero = opNumero;
+        operadoresLidos[operadoresLidosCount].nome = result;
+        operadoresLidosCount++;
+        
+        // Inicia greeting
+        opGreetingStartTime = millis();
+        opGreetingName = result;
+        
+        Serial.print("[RFID-OP] NOVO Operador #");
+        Serial.print(operadoresLidosCount);
+        Serial.print(": ");
+        Serial.println(operadorFromDatabase);
+      } else if (operadoresLidosCount >= MAX_OPERADORES_LIDOS) {
+        Serial.println("[RFID-OP] Array de operadores cheio!");
+      }
+    } else {
+      // Operador não encontrado
+      opDisplayMode = OP_DISPLAY_NOT_FOUND;
+      opNotFoundTime = millis();
+      operadorFromDatabase = "";
+      Serial.println("[DB] RFID não encontrado na BD operadores");
     }
   }
   
