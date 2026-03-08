@@ -829,8 +829,13 @@ bool supabaseGenericInsert(String table, JsonDocument data) {
 
   String jsonPayload;
   serializeJson(data, jsonPayload);
+  
+  // DEBUG: mostra o JSON enviado
+  Serial.print("[DB] Enviando JSON: ");
+  Serial.println(jsonPayload);
 
   int httpCode = http.POST(jsonPayload);
+  String response = http.getString();
   http.end();
 
   if (httpCode == 201) {
@@ -839,6 +844,8 @@ bool supabaseGenericInsert(String table, JsonDocument data) {
   } else {
     Serial.print("Erro POST em " + table + ": ");
     Serial.println(httpCode);
+    Serial.print("[DB] Resposta: ");
+    Serial.println(response);
     return false;
   }
 }
@@ -861,6 +868,15 @@ bool gravarTemposOperadores() {
   strftime(timeStr, sizeof(timeStr), "%d/%m/%y %H:%M", &timeinfo);
   String tempoAtual = String(timeStr);
 
+  // Valida dados obrigatórios
+  int estacaoID = procurarEstacaoPorNome(varA);
+  Serial.print("[DB] Validando: varA=");
+  Serial.print(varA);
+  Serial.print(", varB=");
+  Serial.print(varB);
+  Serial.print(", estacaoID=");
+  Serial.println(estacaoID);
+
   // Grava cada operador na lista NVS atual
   bool allSuccess = true;
   for (int i = 0; i < operadoresCount; i++) {
@@ -868,7 +884,7 @@ bool gravarTemposOperadores() {
     doc["rfid"] = operadoresNVS[i].rfid;  // RFID do operador
     doc["tempo"] = tempoAtual;
     doc["barco"] = varB;  // ordem_fabrico
-    doc["estacao"] = procurarEstacaoPorNome(varA);  // ID da estação
+    doc["estacao"] = estacaoID;  // ID da estação
 
     if (!supabaseGenericInsert("tempos", doc)) {
       allSuccess = false;
@@ -1188,29 +1204,32 @@ void loop() {
 
   // ===== LEITURA RFID PARA OP# (IN E OUT) =====
   if (opReadingInProgress && selectedField == 2 && editState == STATE_EDIT_VALUE) {
-    // Tenta ler um cartão RFID
-    String rfidRead = readRFIDCard();
-    
-    if (rfidRead.length() > 0) {
-      // Cartão lido com sucesso
-      if (lastRFIDOperador != rfidRead) {
-        // Novo RFID (diferente do anterior) - limpa mensagens anteriores
-        lastRFIDOperador = rfidRead;
-        opLookupPending = true;
-        opLookupStartTime = millis();
-        // Mostra feedback imediato enquanto processa
-        opFeedbackMessage = "... à espera";
-        // Atualiza modo de display para mostrar "in/out ... a ler" a piscar
-        opDisplayMode = (opMode == OP_MODE_IN ? OP_DISPLAY_IN_READING : OP_DISPLAY_OUT_READING);
-        Serial.print("[RFID-OP] Cartão lido: ");
-        Serial.println(rfidRead);
+    // Só lê novo cartão se não há lookup pendente
+    if (!opLookupPending) {
+      // Tenta ler um cartão RFID
+      String rfidRead = readRFIDCard();
+      
+      if (rfidRead.length() > 0) {
+        // Cartão lido com sucesso
+        if (lastRFIDOperador != rfidRead) {
+          // Novo RFID (diferente do anterior) - limpa mensagens anteriores
+          lastRFIDOperador = rfidRead;
+          opLookupPending = true;
+          opLookupStartTime = millis();
+          // Mostra feedback imediato enquanto processa
+          opFeedbackMessage = "... à espera";
+          // Atualiza modo de display para mostrar "in/out ... a ler" a piscar
+          opDisplayMode = (opMode == OP_MODE_IN ? OP_DISPLAY_IN_READING : OP_DISPLAY_OUT_READING);
+          Serial.print("[RFID-OP] Cartão lido: ");
+          Serial.println(rfidRead);
+        }
+        // Reset timeout a cada leitura bem-sucedida
+        editModeStart = millis();
       }
-      // Reset timeout a cada leitura bem-sucedida
-      editModeStart = millis();
     }
   }
   
-  // ===== PROCESSAR LOOKUP DE OP# (IN/OUT) APÓS DELAY =====
+  // ===== PROCESSAR LOOKUP DE OP#(IN/OUT) APÓS DELAY =====
   if (opLookupPending && (millis() - opLookupStartTime) > OP_LOOKUP_DELAY) {
     opLookupPending = false;
     
@@ -1331,6 +1350,16 @@ void loop() {
         Serial.println(lastRFIDOperador);
       }
     }
+  }
+  
+  // Volta imediatamente a "... a ler" (sem esperar 2 segundos)
+  if ((opDisplayMode == OP_DISPLAY_IN_SUCCESS || opDisplayMode == OP_DISPLAY_OUT_SUCCESS || opDisplayMode == OP_DISPLAY_NOT_FOUND) &&
+      opReadingInProgress) {
+    // Limpa o RFID anterior para permitir nova leitura
+    lastRFIDOperador = "";
+    // Volta ao modo de leitura piscante
+    opDisplayMode = (opMode == OP_MODE_IN ? OP_DISPLAY_IN_READING : OP_DISPLAY_OUT_READING);
+    // NÃO limpa feedback aqui - mantém visível até sair do ciclo
   }
 
   
