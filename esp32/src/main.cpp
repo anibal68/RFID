@@ -16,6 +16,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 #define BTN2 14       // Button 2 (GPIO14)
 #define BTN3 13       // Button 3 (GPIO13)
 #define BAT_PIN 34     // Battery ADC (GPIO34 - ADC1, sem conflito com WiFi)
+#define SPEAKER_PIN 25 // Speaker PWM (GPIO25)
 
 // Instância do PN532 via I2C (usando pinos dummy para IRQ e Reset para evitar
 // conflito com SDA/SCL)
@@ -477,10 +478,20 @@ void drawEditScreen() {
       u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, blink ? "out ... a ler" : "out");
     }
     else {
-      // Fora de leitura, mostra contador de operadores
+      // Default: mostra contador de operadores
       u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, String(operadoresCount).c_str());
     }
-  } else {
+  } 
+  else if (opDisplayMode == OP_DISPLAY_IN_READING || opDisplayMode == OP_DISPLAY_OUT_READING) {
+    // Se está a ler, mostra mesmo sem estar em editState (em caso de delay)
+    u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");
+    if (opDisplayMode == OP_DISPLAY_IN_READING) {
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, blink ? "in ... a ler" : "in");
+    } else {
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, blink ? "out ... a ler" : "out");
+    }
+  }
+  else {
     // Estado normal ou outro estado
     u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");
     u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, varC == "" ? "---" : varC.c_str());
@@ -731,6 +742,20 @@ void initWiFi(bool isWakeup) {
   WiFi.mode(WIFI_STA);
   
   connectToWiFi();
+}
+
+// --- FUNÇÕES DE SPEAKER ---
+
+void setupSpeaker() {
+  ledcSetup(0, 1000, 8);  // Canal 0, 1kHz, 8-bit
+  ledcAttachPin(SPEAKER_PIN, 0);
+}
+
+void beep(int frequency, int duration) {
+  ledcSetup(0, frequency, 8);
+  ledcWrite(0, 255);  // Máxima amplitude
+  delay(duration);
+  ledcWrite(0, 0);    // Desligar
 }
 
 // --- FUNÇÕES GENÉRICAS SUPABASE ---
