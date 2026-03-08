@@ -865,7 +865,7 @@ bool gravarTemposOperadores() {
   bool allSuccess = true;
   for (int i = 0; i < operadoresCount; i++) {
     JsonDocument doc;
-    doc["operador"] = operadoresNVS[i].rfid;  // RFID é o ID do operador
+    doc["rfid"] = operadoresNVS[i].rfid;  // RFID do operador
     doc["tempo"] = tempoAtual;
     doc["barco"] = varB;  // ordem_fabrico
     doc["estacao"] = procurarEstacaoPorNome(varA);  // ID da estação
@@ -1298,7 +1298,7 @@ void loop() {
           String tempoAtual = String(timeStr);
           
           JsonDocument doc;
-          doc["operador"] = lastRFIDOperador;  // RFID é o ID
+          doc["rfid"] = lastRFIDOperador;  // RFID do operador
           doc["tempo"] = tempoAtual;
           doc["barco"] = varB;  // ordem_fabrico
           doc["estacao"] = procurarEstacaoPorNome(varA);  // ID da estação
