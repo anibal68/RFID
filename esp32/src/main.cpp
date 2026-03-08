@@ -196,15 +196,12 @@ String getFormattedTime() {
 void initNVS() {
   preferences.begin("rfid_config", false); // false = read-write mode
   
-  // Limpa as variáveis no flash (novo ciclo de produção)
-  varA = "";
-  varB = "";
-  varC = "";
-  varD = "";
-  varE = "";
-  saveNVS();
-  
-  Serial.println("[NVS] Variáveis limpas no início do flash");
+  // Carrega as variáveis persistidas (permite continuar ordem no próximo dia)
+  varA = preferences.getString("varA", "");
+  varB = preferences.getString("varB", "");
+  varC = preferences.getString("varC", "");
+  varD = preferences.getString("varD", "");
+  varE = preferences.getString("varE", "");
   
   Serial.println("[NVS] Variáveis carregadas:");
   Serial.print("  A: "); Serial.println(varA);
