@@ -895,13 +895,15 @@ void loop() {
         // Grava os operadores na BD
         if (operadoresLidosCount > 0) {
           gravarTemposOperadores();
-          updateVariable('C', String(operadoresLidosCount));
           Serial.print("[EDIT] Registou ");
           Serial.print(operadoresLidosCount);
           Serial.println(" operadores na BD");
         } else {
           Serial.println("[EDIT] Nenhum operador lido");
         }
+        
+        // SEMPRE atualiza varC com o número correto (mesmo que 0)
+        updateVariable('C', String(operadoresLidosCount));
         
         // Reset das variáveis de Op#
         opGreetingStartTime = -1;
