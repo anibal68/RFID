@@ -59,8 +59,7 @@ String varE = "";  // Variável extra 5
 // Estrutura: apenas armazenar RFID + ID do operador
 #define MAX_OPERATORS 50
 struct OperadorNVS {
-  String rfid;      // RFID do cartão
-  String id;        // ID/Número do operador
+  String rfid;      // RFID do cartão (identificador único)
 };
 OperadorNVS operadoresNVS[MAX_OPERATORS];
 int operadoresCount = 0;  // Número atual de operadores registados
@@ -124,12 +123,6 @@ bool ordLookupPending = false;  // Flag para aguardar antes de fazer lookup
 long ordLookupStartTime = -1;   // Quando começou o delay
 const long ORD_LOOKUP_DELAY = 500; // 500ms antes de fazer a lookup
 
-// Tracking de RFIDs já lidos para contagem de operadores
-#define MAX_RFID_HISTORY 10
-String rfidHistory[MAX_RFID_HISTORY];   // Último RFID lido
-int rfidHistoryIndex = 0;
-bool isNewRFID = false;  // Flag para saber se é novo RFID
-
 // ===== OPERADORES (Op#) - Novos estados In/Out =====
 enum OpMode {
   OP_MODE_IN = 0,   // Entrada de operador
@@ -140,7 +133,6 @@ OpMode opMode = OP_MODE_IN;  // Modo atual (In ou Out)
 // Variáveis para leitura RFID de operadores
 String lastRFIDOperador = "";  // Último RFID lido para operador
 String operadorFromDatabase = "";  // Nome do operador devolvido da BD
-String operadorIdDatabase = "";    // ID do operador devolvido da BD
 long opReadStart = -1;  // Quando começou a tentar ler operador
 
 enum OpDisplayMode {
@@ -166,6 +158,13 @@ bool opLookupPending = false;
 long opLookupStartTime = -1;
 const long OP_LOOKUP_DELAY = 500;  // 500ms antes de fazer a lookup
 bool opReadingInProgress = false;
+
+// ===== FORWARD DECLARATIONS =====
+void loadOperadoresNVS();
+void saveOperadoresNVS();
+bool operadorExists(String rfid);
+bool addOperador(String rfid);
+bool removeOperador(String rfid);
 
 void goToSleep() {
   u8g2.clearBuffer();
@@ -221,11 +220,11 @@ void initNVS() {
 // ===== FUNÇÕES DE PERSISTÊNCIA DE OPERADORES =====
 
 void saveOperadoresNVS() {
-  // Serializa armazenando cada operador como "rfid:id"
+  // Serializa armazenando cada RFID separado por "|"
   String serialized = "";
   for (int i = 0; i < operadoresCount; i++) {
-    if (i > 0) serialized += "|";  // Separador entre operadores
-    serialized += operadoresNVS[i].rfid + ":" + operadoresNVS[i].id;
+    if (i > 0) serialized += "|";
+    serialized += operadoresNVS[i].rfid;
   }
   
   preferences.putString("operadores", serialized);
@@ -243,31 +242,22 @@ void loadOperadoresNVS() {
     return;
   }
   
-  // Deserializa
-  int idx = 0;
+  // Deserializa - cada RFID separado por "|"
   int lastIdx = 0;
   
-  while (idx <= serialized.length() && operadoresCount < MAX_OPERATORS) {
-    // Procura próximo separador "|"
+  while (lastIdx < serialized.length() && operadoresCount < MAX_OPERATORS) {
     int nextIdx = serialized.indexOf('|', lastIdx);
     if (nextIdx == -1) nextIdx = serialized.length();
     
-    String entry = serialized.substring(lastIdx, nextIdx);
-    
-    // Procura separador ":" dentro da entrada
-    int colonIdx = entry.indexOf(':');
-    if (colonIdx != -1) {
-      operadoresNVS[operadoresCount].rfid = entry.substring(0, colonIdx);
-      operadoresNVS[operadoresCount].id = entry.substring(colonIdx + 1);
+    String rfid = serialized.substring(lastIdx, nextIdx);
+    if (rfid.length() > 0) {
+      operadoresNVS[operadoresCount].rfid = rfid;
       operadoresCount++;
       Serial.print("[NVS-OP] Carregado: ");
-      Serial.print(operadoresNVS[operadoresCount - 1].rfid);
-      Serial.print(" -> ");
-      Serial.println(operadoresNVS[operadoresCount - 1].id);
+      Serial.println(rfid);
     }
     
     lastIdx = nextIdx + 1;
-    if (nextIdx == serialized.length()) break;
   }
   
   Serial.print("[NVS-OP] Total de operadores: ");
@@ -285,7 +275,7 @@ bool operadorExists(String rfid) {
 }
 
 // Adiciona um novo operador à lista (sem duplicatas)
-bool addOperador(String rfid, String id) {
+bool addOperador(String rfid) {
   if (operadorExists(rfid)) {
     Serial.print("[NVS-OP] Operador já existe: ");
     Serial.println(rfid);
@@ -298,7 +288,6 @@ bool addOperador(String rfid, String id) {
   }
   
   operadoresNVS[operadoresCount].rfid = rfid;
-  operadoresNVS[operadoresCount].id = id;
   operadoresCount++;
   
   saveOperadoresNVS();
@@ -329,15 +318,7 @@ bool removeOperador(String rfid) {
   return false;
 }
 
-// Obter ID do operador pelo RFID
-String getOperadorIdByRfid(String rfid) {
-  for (int i = 0; i < operadoresCount; i++) {
-    if (operadoresNVS[i].rfid == rfid) {
-      return operadoresNVS[i].id;
-    }
-  }
-  return "";
-}
+
 
 void saveNVS() {
   preferences.putString("varA", varA);
@@ -845,7 +826,7 @@ bool gravarTemposOperadores() {
   bool allSuccess = true;
   for (int i = 0; i < operadoresCount; i++) {
     JsonDocument doc;
-    doc["operador"] = operadoresNVS[i].id;
+    doc["operador"] = operadoresNVS[i].rfid;  // RFID é o ID do operador
     doc["tempo"] = tempoAtual;
     doc["barco"] = varB;  // ordem_fabrico
     doc["estacao"] = procurarEstacaoPorNome(varA);  // ID da estação
@@ -853,8 +834,8 @@ bool gravarTemposOperadores() {
     if (!supabaseGenericInsert("tempos", doc)) {
       allSuccess = false;
     } else {
-      Serial.print("[DB] Tempo registado: Op#");
-      Serial.print(operadoresNVS[i].id);
+      Serial.print("[DB] Tempo registado: ");
+      Serial.print(operadoresNVS[i].rfid);
       Serial.print(" - ");
       Serial.println(tempoAtual);
     }
@@ -989,11 +970,6 @@ void loop() {
         // Est: confirma valor e sai de edição
         String estacaoSelecionada = procurarEstacao(currentEstacaoIndex + 1);
         updateVariable('A', estacaoSelecionada);
-        // Não reseta varC aqui - será feito apenas em Op#
-        for (int i = 0; i < MAX_RFID_HISTORY; i++) {
-          rfidHistory[i] = "";
-        }
-        rfidHistoryIndex = 0;
         editState = STATE_NORMAL;
         rfidReadingInProgress = false;
         Serial.print("[EDIT] Confirmou estação: ");
@@ -1004,12 +980,8 @@ void loop() {
         rfidReadingInProgress = false;
         
         if (ordFromDatabase.length() > 0) {
-          // Se encontrou algo, guarda (mas não toca em varC - será feito em Op#)
+          // Se encontrou algo, guarda
           updateVariable('B', ordFromDatabase);
-          for (int i = 0; i < MAX_RFID_HISTORY; i++) {
-            rfidHistory[i] = "";
-          }
-          rfidHistoryIndex = 0;
           Serial.print("[EDIT] Confirmou ordem: ");
           Serial.println(ordFromDatabase);
         } else {
@@ -1021,29 +993,38 @@ void loop() {
         ordDisplayMode = ORD_DISPLAY_NORMAL;
         Serial.println("[EDIT] Voltou ao modo normal");
       } else if (selectedField == 2) {
-        // Op#: SEMPRE sai ao pressionar Enter
-        opReadingInProgress = false;
-        
-        // Grava os operadores na BD
-        if (operadoresLidosCount > 0) {
-          gravarTemposOperadores();
-          Serial.print("[EDIT] Registou ");
-          Serial.print(operadoresLidosCount);
-          Serial.println(" operadores na BD");
+        // Op#: comportamento depende do modo de display
+        if (opDisplayMode == OP_DISPLAY_MODE_SELECT) {
+          // Estava em seleção de In/Out, agora inicia leitura
+          if (opMode == OP_MODE_IN) {
+            opDisplayMode = OP_DISPLAY_IN_READING;
+            Serial.println("[EDIT] Iniciando leitura IN de operadores");
+          } else {
+            opDisplayMode = OP_DISPLAY_OUT_READING;
+            Serial.println("[EDIT] Iniciando leitura OUT de operadores");
+          }
+          opReadingInProgress = true;
+          opReadStart = millis();
+          lastRFIDOperador = "";
+          operadorFromDatabase = "";
+          editModeStart = millis();
         } else {
-          Serial.println("[EDIT] Nenhum operador lido");
+          // Estava em leitura (In ou Out), agora termina
+          opReadingInProgress = false;
+          
+          // Limpeza de greeting
+          opGreetingStartTime = -1;
+          opGreetingName = "";
+          
+          // Atualiza varC com número atual de operadores
+          updateVariable('C', String(operadoresCount));
+          
+          editState = STATE_NORMAL;
+          opDisplayMode = OP_DISPLAY_NORMAL;
+          Serial.print("[EDIT] Finalizou Op#, total operadores: ");
+          Serial.println(operadoresCount);
+          Serial.println("[EDIT] Voltou ao modo normal");
         }
-        
-        // SEMPRE atualiza varC com o número correto (mesmo que 0)
-        updateVariable('C', String(operadoresLidosCount));
-        
-        // Reset das variáveis de Op#
-        opGreetingStartTime = -1;
-        opGreetingName = "";
-        
-        editState = STATE_NORMAL;
-        opDisplayMode = OP_DISPLAY_NORMAL;
-        Serial.println("[EDIT] Voltou ao modo normal");
       }
     }
   }
@@ -1064,6 +1045,14 @@ void loop() {
         editModeStart = millis();  // Reset timeout
         Serial.print("[EDIT] Estação anterior: ");
         Serial.println(procurarEstacao(currentEstacaoIndex + 1));
+      } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
+        // Comuta entre In e Out
+        if (opDisplayMode == OP_DISPLAY_MODE_SELECT) {
+          opMode = (opMode == OP_MODE_IN) ? OP_MODE_OUT : OP_MODE_IN;
+          lastStateChangeTime = millis();  // Feedback visual
+          Serial.print("[EDIT] Op# modo: ");
+          Serial.println(opMode == OP_MODE_IN ? "IN" : "OUT");
+        }
       }
     }
   }
@@ -1084,6 +1073,14 @@ void loop() {
         editModeStart = millis();  // Reset timeout
         Serial.print("[EDIT] Próxima estação: ");
         Serial.println(procurarEstacao(currentEstacaoIndex + 1));
+      } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
+        // Comuta entre In e Out
+        if (opDisplayMode == OP_DISPLAY_MODE_SELECT) {
+          opMode = (opMode == OP_MODE_IN) ? OP_MODE_OUT : OP_MODE_IN;
+          lastStateChangeTime = millis();  // Feedback visual
+          Serial.print("[EDIT] Op# modo: ");
+          Serial.println(opMode == OP_MODE_IN ? "IN" : "OUT");
+        }
       }
     }
   }
@@ -1147,76 +1144,85 @@ void loop() {
     }
   }
 
-  // ===== LEITURA RFID CONTÍNUA PARA OP# =====
+  // ===== LEITURA RFID PARA OP# (IN E OUT) =====
   if (opReadingInProgress && selectedField == 2 && editState == STATE_EDIT_VALUE) {
-    // Tenta ler um cartão RFID de forma contínua
+    // Tenta ler um cartão RFID
     String rfidRead = readRFIDCard();
     
     if (rfidRead.length() > 0) {
-      // Cartão lido com sucesso - guarda e processa
+      // Cartão lido com sucesso
       if (lastRFIDOperador != rfidRead) {
         // Novo RFID (diferente do anterior)
         lastRFIDOperador = rfidRead;
-        opDisplayMode = OP_DISPLAY_VERIFYING;  // Muda para "... verificar"
-        opLookupPending = true;  // Marca para fazer lookup depois
-        opLookupStartTime = millis();  // Inicia o delay
+        opLookupPending = true;
+        opLookupStartTime = millis();
         Serial.print("[RFID-OP] Cartão lido: ");
         Serial.println(rfidRead);
       }
-      // Continua tentando ler
-      editModeStart = millis();  // Reset de timeout a cada leitura bem-sucedida
+      // Reset timeout a cada leitura bem-sucedida
+      editModeStart = millis();
     }
   }
   
-  // ===== PROCESSAR LOOKUP DE OP# APÓS DELAY =====
+  // ===== PROCESSAR LOOKUP DE OP# (IN/OUT) APÓS DELAY =====
   if (opLookupPending && (millis() - opLookupStartTime) > OP_LOOKUP_DELAY) {
-    // Agora faz o lookup (depois de mostrar "verificar")
     opLookupPending = false;
     
-    // Tenta fazer lookup na tabela "operadores"
     Serial.print("[DB] Procurando operador com rfid=");
     Serial.println(lastRFIDOperador);
     
-    String result = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "nome");
-    String opNumero = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "id");
+    // Lookup na BD (apenas para obter o nome)
+    String nomeOperador = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "nome");
     
-    if (result != "Nao encontrado" && result != "Erro: Offline") {
-      // Operador encontrado!
-      operadorFromDatabase = opNumero + " - " + result;
-      opDisplayMode = OP_DISPLAY_FOUND;  // Muda para mostrar valor a piscar
+    if (nomeOperador != "Nao encontrado" && nomeOperador != "Erro: Offline") {
+      // Operador encontrado na BD
+      operadorFromDatabase = nomeOperador;
       Serial.print("[DB] Operador encontrado: ");
-      Serial.println(operadorFromDatabase);
+      Serial.print(lastRFIDOperador);
+      Serial.print(" - ");
+      Serial.println(nomeOperador);
       
-      // Verifica se é um operador novo (não foi lido antes nesta sessão)
-      bool isNewOperador = true;
-      for (int i = 0; i < operadoresLidosCount; i++) {
-        if (operadoresLidos[i].numero == opNumero) {
-          isNewOperador = false;
-          Serial.print("[RFID-OP] Operador já lido: ");
-          Serial.println(opNumero);
-          break;
+      if (opMode == OP_MODE_IN) {
+        // MODO IN: adiciona à lista se não existir
+        bool exists = operadorExists(lastRFIDOperador);
+        
+        if (!exists) {
+          // Novo operador - adiciona à lista
+          addOperador(lastRFIDOperador);
+          opDisplayMode = OP_DISPLAY_IN_SUCCESS;
+          
+          // Inicia greeting
+          opGreetingStartTime = millis();
+          opGreetingName = nomeOperador;
+          
+          Serial.print("[RFID-OP] NOVO operador IN adicionado: ");
+          Serial.println(lastRFIDOperador);
+        } else {
+          // Operador já existe - apenas mostra sucesso
+          opDisplayMode = OP_DISPLAY_IN_SUCCESS;
+          Serial.print("[RFID-OP] Operador já na lista: ");
+          Serial.println(lastRFIDOperador);
+        }
+      } else {
+        // MODO OUT: remove da lista se existir
+        bool exists = operadorExists(lastRFIDOperador);
+        
+        if (exists) {
+          // Remove da lista
+          removeOperador(lastRFIDOperador);
+          opDisplayMode = OP_DISPLAY_OUT_SUCCESS;
+          Serial.print("[RFID-OP] Operador OUT removido: ");
+          Serial.println(lastRFIDOperador);
+        } else {
+          // Operador não está na lista
+          opDisplayMode = OP_DISPLAY_NOT_FOUND;
+          opNotFoundTime = millis();
+          Serial.print("[RFID-OP] Operador não consta da lista: ");
+          Serial.println(lastRFIDOperador);
         }
       }
-      
-      // Se é novo, adiciona ao array
-      if (isNewOperador && operadoresLidosCount < MAX_OPERADORES_LIDOS) {
-        operadoresLidos[operadoresLidosCount].numero = opNumero;
-        operadoresLidos[operadoresLidosCount].nome = result;
-        operadoresLidosCount++;
-        
-        // Inicia greeting
-        opGreetingStartTime = millis();
-        opGreetingName = result;
-        
-        Serial.print("[RFID-OP] NOVO Operador #");
-        Serial.print(operadoresLidosCount);
-        Serial.print(": ");
-        Serial.println(operadorFromDatabase);
-      } else if (operadoresLidosCount >= MAX_OPERADORES_LIDOS) {
-        Serial.println("[RFID-OP] Array de operadores cheio!");
-      }
     } else {
-      // Operador não encontrado
+      // Operador não encontrado na BD
       opDisplayMode = OP_DISPLAY_NOT_FOUND;
       opNotFoundTime = millis();
       operadorFromDatabase = "";
@@ -1224,15 +1230,19 @@ void loop() {
     }
   }
   
-  // ===== CONTROLE DE EXIBIÇÃO "NÃO EXISTE OP" =====
+  // ===== CONTROLE DE EXIBIÇÃO "OP. NÃO ENCONTRADO" =====
   if (opDisplayMode == OP_DISPLAY_NOT_FOUND && opNotFoundTime != -1) {
     if ((millis() - opNotFoundTime) > OP_NOT_FOUND_DISPLAY_TIME) {
-      // Passou 2 segundos, volta a tentar ler
-      opDisplayMode = OP_DISPLAY_READING;
+      // Passou 1 segundo, volta a tentar ler
+      if (opMode == OP_MODE_IN) {
+        opDisplayMode = OP_DISPLAY_IN_READING;
+      } else {
+        opDisplayMode = OP_DISPLAY_OUT_READING;
+      }
       operadorFromDatabase = "";
       lastRFIDOperador = "";
       opNotFoundTime = -1;
-      Serial.println("[RFID-OP] Voltou a tentar ler após 2 segundos");
+      Serial.println("[RFID-OP] Voltou a tentar ler após 1 segundo");
     }
   }
 
@@ -1269,5 +1279,5 @@ void loop() {
   }
 
   // Loop infinito - sem sleep
-  delay(100); // Pequeno delay para evitar travamentos
+  delay(50); // Delay reduzido de 100ms para melhor responsividade às teclas
 }
