@@ -883,7 +883,7 @@ bool gravarTemposOperadores() {
     JsonDocument doc;
     doc["rfid"] = operadoresNVS[i].rfid;  // RFID do operador
     doc["tempo"] = tempoAtual;
-    doc["barco"] = varB;  // ordem_fabrico
+    doc["ordem_fabrico"] = varB;  // ordem_fabrico
     doc["estacao"] = estacaoID;  // ID da estação
 
     if (!supabaseGenericInsert("tempos", doc)) {
@@ -1331,7 +1331,7 @@ void loop() {
           JsonDocument doc;
           doc["rfid"] = lastRFIDOperador;  // RFID do operador
           doc["tempo"] = tempoAtual;
-          doc["barco"] = varB;  // ordem_fabrico
+          doc["ordem_fabrico"] = varB;  // ordem_fabrico
           doc["estacao"] = estacaoID;  // ID da estação
           
           if (supabaseGenericInsert("tempos", doc)) {
