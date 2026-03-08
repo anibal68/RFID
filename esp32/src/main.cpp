@@ -196,12 +196,15 @@ String getFormattedTime() {
 void initNVS() {
   preferences.begin("rfid_config", false); // false = read-write mode
   
-  // Carrega variáveis do NVS
-  varA = preferences.getString("varA", "");
-  varB = preferences.getString("varB", "");
-  varC = preferences.getString("varC", "");
-  varD = preferences.getString("varD", "");
-  varE = preferences.getString("varE", "");
+  // Limpa as variáveis no flash (novo ciclo de produção)
+  varA = "";
+  varB = "";
+  varC = "";
+  varD = "";
+  varE = "";
+  saveNVS();
+  
+  Serial.println("[NVS] Variáveis limpas no início do flash");
   
   Serial.println("[NVS] Variáveis carregadas:");
   Serial.print("  A: "); Serial.println(varA);
@@ -1046,7 +1049,7 @@ void loop() {
     Serial.println(lastRFIDOperador);
     
     String result = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "nome");
-    String opNumero = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "numero");
+    String opNumero = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "id");
     
     if (result != "Nao encontrado" && result != "Erro: Offline") {
       // Operador encontrado!
