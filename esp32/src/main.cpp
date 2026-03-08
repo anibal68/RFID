@@ -159,6 +159,13 @@ long opLookupStartTime = -1;
 const long OP_LOOKUP_DELAY = 500;  // 500ms antes de fazer a lookup
 bool opReadingInProgress = false;
 
+// ===== POSIÇÕES DE DISPLAY (Y) =====
+const int DISPLAY_LINE1_Y = 20;  // Linha 1: Est:
+const int DISPLAY_LINE2_Y = 35;  // Linha 2: Ord:
+const int DISPLAY_LINE3_Y = 50;  // Linha 3: Op#:
+const int DISPLAY_LINE4_Y = 63;  // Linha 4: Feedback/Debug
+const int DISPLAY_VALUE_X = 30;  // Posição X dos valores
+
 // ===== FORWARD DECLARATIONS =====
 void loadOperadoresNVS();
 void saveOperadoresNVS();
@@ -373,44 +380,44 @@ void drawEditScreen() {
   // Piscante do campo selecionado
   bool blink = shouldBlink();
   
-  // ===== LINHA 2: ESTAÇÃO =====
+  // ===== LINHA 1: ESTAÇÃO =====
   // Em STATE_SELECT_FIELD: pisca o rótulo se selecionado
   // Em STATE_EDIT_VALUE: pisca o valor se selecionado
   
   if (editState == STATE_SELECT_FIELD) {
     // Modo seleção: pisca o rótulo
     if (selectedField == 0 && blink) {
-      u8g2.drawStr(0, 20, "Est:");  // Pisca
+      u8g2.drawStr(0, DISPLAY_LINE1_Y, "Est:");  // Pisca
     } else if (selectedField != 0) {
-      u8g2.drawStr(0, 20, "Est:");  // Sempre visível se não selecionado
+      u8g2.drawStr(0, DISPLAY_LINE1_Y, "Est:");  // Sempre visível se não selecionado
     }
     // Mostra o valor guardado (sempre visível)
-    u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
+    u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE1_Y, varA == "" ? "---" : varA.c_str());
   } else if (editState == STATE_EDIT_VALUE && selectedField == 0) {
     // Modo edição de Est: pisca o valor
-    u8g2.drawStr(0, 20, "Est:");  // Rótulo sempre visível
+    u8g2.drawStr(0, DISPLAY_LINE1_Y, "Est:");  // Rótulo sempre visível
     if (blink) {
-      u8g2.drawStr(30, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());  // Pisca
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE1_Y, procurarEstacao(currentEstacaoIndex + 1).c_str());  // Pisca
     }
   } else {
     // Estado normal ou outro estado
-    u8g2.drawStr(0, 20, "Est:");
-    u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
+    u8g2.drawStr(0, DISPLAY_LINE1_Y, "Est:");
+    u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE1_Y, varA == "" ? "---" : varA.c_str());
   }
   
-  // ===== LINHA 3: ORDEM =====
+  // ===== LINHA 2: ORDEM =====
   if (editState == STATE_SELECT_FIELD) {
     // Modo seleção: pisca o rótulo
     if (selectedField == 1 && blink) {
-      u8g2.drawStr(0, 35, "Ord:");  // Pisca
+      u8g2.drawStr(0, DISPLAY_LINE2_Y, "Ord:");  // Pisca
     } else if (selectedField != 1) {
-      u8g2.drawStr(0, 35, "Ord:");  // Sempre visível se não selecionado
+      u8g2.drawStr(0, DISPLAY_LINE2_Y, "Ord:");  // Sempre visível se não selecionado
     }
     // Mostra o valor guardado (sempre visível)
-    u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
+    u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE2_Y, varB == "" ? "---" : varB.c_str());
   } else if (editState == STATE_EDIT_VALUE && selectedField == 1) {
     // Modo edição de Ord: comportamento depende do modo de display
-    u8g2.drawStr(0, 35, "Ord:");  // Rótulo sempre visível
+    u8g2.drawStr(0, DISPLAY_LINE2_Y, "Ord:");  // Rótulo sempre visível
     
     String displayOrd = "";
     bool shouldDisplay = true;
@@ -435,49 +442,49 @@ void drawEditScreen() {
     }
     
     if (shouldDisplay) {
-      u8g2.drawStr(30, 35, displayOrd.c_str());
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE2_Y, displayOrd.c_str());
     }
   } else {
     // Estado normal ou outro estado
-    u8g2.drawStr(0, 35, "Ord:");
-    u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
+    u8g2.drawStr(0, DISPLAY_LINE2_Y, "Ord:");
+    u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE2_Y, varB == "" ? "---" : varB.c_str());
   }
   
-  // ===== LINHA 4: OPERADORES =====
+  // ===== LINHA 3: OPERADORES =====
   if (editState == STATE_SELECT_FIELD) {
     // Modo seleção: pisca o rótulo
     if (selectedField == 2 && blink) {
-      u8g2.drawStr(0, 50, "Op#:");  // Pisca
+      u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");  // Pisca
     } else if (selectedField != 2) {
-      u8g2.drawStr(0, 50, "Op#:");  // Sempre visível se não selecionado
+      u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");  // Sempre visível se não selecionado
     }
     // Mostra o valor guardado (sempre visível)
-    u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+    u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, varC == "" ? "---" : varC.c_str());
   } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
     // Modo edição de Op#
-    u8g2.drawStr(0, 50, "Op#:");  // Rótulo sempre visível
+    u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");  // Rótulo sempre visível
     
     // Mostra "In" ou "Out" a piscar se está em seleção de modo
     if (opDisplayMode == OP_DISPLAY_MODE_SELECT) {
       if (blink) {
-        u8g2.drawStr(30, 50, opMode == OP_MODE_IN ? "In" : "Out");  // Pisca
+        u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, opMode == OP_MODE_IN ? "In" : "Out");  // Pisca
       }
     } 
     // Se está em greeting, mostra "Olá nome"
     else if (opGreetingStartTime != -1 && (millis() - opGreetingStartTime) < OP_GREETING_DISPLAY_TIME) {
-      u8g2.drawStr(30, 50, ("Ola " + opGreetingName).c_str());
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, ("Ola " + opGreetingName).c_str());
     } 
     // Senão mostra o contador de operadores
     else {
-      u8g2.drawStr(30, 50, String(operadoresCount).c_str());
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, String(operadoresCount).c_str());
     }
   } else {
     // Estado normal ou outro estado
-    u8g2.drawStr(0, 50, "Op#:");
-    u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+    u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");
+    u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, varC == "" ? "---" : varC.c_str());
   }
   
-  // ===== LINHA 5: FEEDBACK DE OP# =====
+  // ===== LINHA 4: FEEDBACK =====
   if (editState == STATE_EDIT_VALUE && selectedField == 2) {
     String displayOp = "";
     
@@ -504,10 +511,10 @@ void drawEditScreen() {
         break;
     }
     
-    u8g2.drawStr(0, 63, displayOp.c_str());
+    u8g2.drawStr(0, DISPLAY_LINE4_Y, displayOp.c_str());
   } else {
     // Se não está em edição de Op#, mostra lastRfidValue (para debug)
-    u8g2.drawStr(0, 63, lastRfidValue.c_str());
+    u8g2.drawStr(0, DISPLAY_LINE4_Y, lastRfidValue.c_str());
   }
   
   u8g2.sendBuffer();
@@ -521,17 +528,17 @@ void drawMainScreen() {
   drawBatteryIcon(cachedBattery);
   drawWiFiIcon(cachedRssi);
   
-  // Linha 2: Estação
-  u8g2.drawStr(0, 20, "Est:");
-  u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
+  // Linha 1: Estação
+  u8g2.drawStr(0, DISPLAY_LINE1_Y, "Est:");
+  u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE1_Y, varA == "" ? "---" : varA.c_str());
   
-  // Linha 3: Ordem de Produção
-  u8g2.drawStr(0, 35, "Ord:");
-  u8g2.drawStr(30, 35, varB == "" ? "---" : varB.c_str());
+  // Linha 2: Ordem de Produção
+  u8g2.drawStr(0, DISPLAY_LINE2_Y, "Ord:");
+  u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE2_Y, varB == "" ? "---" : varB.c_str());
   
-  // Linha 4: Número de Operadores
-  u8g2.drawStr(0, 50, "Op#:");
-  u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+  // Linha 3: Número de Operadores
+  u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");
+  u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, varC == "" ? "---" : varC.c_str());
   
   u8g2.sendBuffer();
 }
