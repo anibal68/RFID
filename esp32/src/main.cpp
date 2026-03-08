@@ -145,19 +145,16 @@ enum OpDisplayMode {
   OP_DISPLAY_NOT_FOUND = 6    // Mostra "op. nao encontrado"
 };
 OpDisplayMode opDisplayMode = OP_DISPLAY_NORMAL;
-long opNotFoundTime = -1;
-const long OP_NOT_FOUND_DISPLAY_TIME = 1000;  // 1 segundo
+bool opReadingInProgress = false;
 
-// Controle de exibição "Olá nome do operador"
-long opGreetingStartTime = -1;
-const long OP_GREETING_DISPLAY_TIME = 2000;  // 2 segundos
-String opGreetingName = "";  // Nome a mostrar no greeting
+// Controle de exibição - mensagens persistentes na linha 4
+String opGreetingName = "";  // Nome a mostrar no feedback
+String opFeedbackMessage = "";  // Mensagem persistente da linha 4
 
 // Variáveis para controlar delay da lookup
 bool opLookupPending = false;
 long opLookupStartTime = -1;
 const long OP_LOOKUP_DELAY = 500;  // 500ms antes de fazer a lookup
-bool opReadingInProgress = false;
 
 // ===== POSIÇÕES DE DISPLAY (Y) =====
 const int DISPLAY_LINE1_Y = 20;  // Linha 1: Est:
@@ -501,19 +498,19 @@ void drawEditScreen() {
         // Durante leitura IN: nada na linha 4
         break;
       case OP_DISPLAY_IN_SUCCESS:
-        // Sucesso IN: mostra "olá " + nome do operador
-        displayFeedback = "Ola " + operadorFromDatabase;
+        // Sucesso IN: mostra mensagem persistente
+        displayFeedback = opFeedbackMessage;
         break;
       case OP_DISPLAY_OUT_READING:
         // Durante leitura OUT: nada na linha 4
         break;
       case OP_DISPLAY_OUT_SUCCESS:
-        // Sucesso OUT: informação de remoção (se necessário)
-        displayFeedback = "removido";
+        // Sucesso OUT: mostra mensagem persistente
+        displayFeedback = opFeedbackMessage;
         break;
       case OP_DISPLAY_NOT_FOUND:
-        // Erro: operador não encontrado na BD
-        displayFeedback = "erro op nao existe na bd";
+        // Erro: mostra mensagem persistente
+        displayFeedback = opFeedbackMessage;
         break;
       default:
         break;
@@ -1027,9 +1024,9 @@ void loop() {
           // Estava em leitura (In ou Out), agora termina
           opReadingInProgress = false;
           
-          // Limpeza de greeting
-          opGreetingStartTime = -1;
+          // Limpeza de feedback
           opGreetingName = "";
+          opFeedbackMessage = "";
           
           // Atualiza varC com número atual de operadores
           updateVariable('C', String(operadoresCount));
@@ -1167,10 +1164,11 @@ void loop() {
     if (rfidRead.length() > 0) {
       // Cartão lido com sucesso
       if (lastRFIDOperador != rfidRead) {
-        // Novo RFID (diferente do anterior)
+        // Novo RFID (diferente do anterior) - limpa mensagens anteriores
         lastRFIDOperador = rfidRead;
         opLookupPending = true;
         opLookupStartTime = millis();
+        opFeedbackMessage = "";  // Limpa mensagem anterior
         Serial.print("[RFID-OP] Cartão lido: ");
         Serial.println(rfidRead);
       }
@@ -1183,21 +1181,22 @@ void loop() {
   if (opLookupPending && (millis() - opLookupStartTime) > OP_LOOKUP_DELAY) {
     opLookupPending = false;
     
-    Serial.print("[DB] Procurando operador com rfid=");
-    Serial.println(lastRFIDOperador);
-    
-    // Lookup na BD (apenas para obter o nome)
-    String nomeOperador = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "nome");
-    
-    if (nomeOperador != "Nao encontrado" && nomeOperador != "Erro: Offline") {
-      // Operador encontrado na BD
-      operadorFromDatabase = nomeOperador;
-      Serial.print("[DB] Operador encontrado: ");
-      Serial.print(lastRFIDOperador);
-      Serial.print(" - ");
-      Serial.println(nomeOperador);
+    if (opMode == OP_MODE_IN) {
+      // MODO IN: faz lookup na BD para obter o nome
+      Serial.print("[DB] Procurando operador com rfid=");
+      Serial.println(lastRFIDOperador);
       
-      if (opMode == OP_MODE_IN) {
+      // Lookup na BD (apenas para obter o nome)
+      String nomeOperador = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "nome");
+      
+      if (nomeOperador != "Nao encontrado" && nomeOperador != "Erro: Offline") {
+        // Operador encontrado na BD
+        operadorFromDatabase = nomeOperador;
+        Serial.print("[DB] Operador encontrado: ");
+        Serial.print(lastRFIDOperador);
+        Serial.print(" - ");
+        Serial.println(nomeOperador);
+        
         // MODO IN: adiciona à lista se não existir
         bool exists = operadorExists(lastRFIDOperador);
         
@@ -1213,9 +1212,9 @@ void loop() {
           
           opDisplayMode = OP_DISPLAY_IN_SUCCESS;
           
-          // Inicia greeting
-          opGreetingStartTime = millis();
+          // Prepara mensagem de feedback
           opGreetingName = nomeOperador;
+          opFeedbackMessage = "Ola " + nomeOperador;
           
           Serial.print("[RFID-OP] NOVO operador IN adicionado: ");
           Serial.println(lastRFIDOperador);
@@ -1223,66 +1222,64 @@ void loop() {
           // Operador já existe - apenas mostra sucesso
           opDisplayMode = OP_DISPLAY_IN_SUCCESS;
           
-          // Inicia greeting (mesmo que já exista)
-          opGreetingStartTime = millis();
+          // Prepara mensagem de feedback
           opGreetingName = nomeOperador;
+          opFeedbackMessage = "Ola " + nomeOperador;
           
           Serial.print("[RFID-OP] Operador já na lista: ");
           Serial.println(lastRFIDOperador);
         }
       } else {
-        // MODO OUT: remove da lista se existir
-        bool exists = operadorExists(lastRFIDOperador);
-        
-        if (exists) {
-          // Remove da lista
-          removeOperador(lastRFIDOperador);
-          opDisplayMode = OP_DISPLAY_OUT_SUCCESS;
-          Serial.print("[RFID-OP] Operador OUT removido: ");
-          Serial.println(lastRFIDOperador);
-        } else {
-          // Operador não está na lista
-          opDisplayMode = OP_DISPLAY_NOT_FOUND;
-          opNotFoundTime = millis();
-          Serial.print("[RFID-OP] Operador não consta da lista: ");
-          Serial.println(lastRFIDOperador);
-        }
+        // Operador não encontrado na BD
+        opDisplayMode = OP_DISPLAY_NOT_FOUND;
+        opFeedbackMessage = "erro op nao existe na bd";
+        operadorFromDatabase = "";
+        Serial.println("[DB] RFID não encontrado na BD operadores");
       }
     } else {
-      // Operador não encontrado na BD
-      opDisplayMode = OP_DISPLAY_NOT_FOUND;
-      opNotFoundTime = millis();
-      operadorFromDatabase = "";
-      Serial.println("[DB] RFID não encontrado na BD operadores");
-    }
-  }
-  
-  // ===== CONTROLE DE EXIBIÇÃO "OP. NÃO ENCONTRADO" E RESTART DO CICLO =====
-  if (opDisplayMode == OP_DISPLAY_IN_SUCCESS && opGreetingStartTime != -1) {
-    // Ciclo IN após sucesso: mostra greeting e volta a tentar ler após 2 segundos
-    if ((millis() - opGreetingStartTime) > OP_GREETING_DISPLAY_TIME) {
-      // Passou 2 segundos, volta a tentar ler
-      opDisplayMode = OP_DISPLAY_IN_READING;
-      operadorFromDatabase = "";
-      lastRFIDOperador = "";
-      opGreetingStartTime = -1;
-      opGreetingName = "";
-      Serial.println("[RFID-OP] Regressou ao ciclo IN após greeting");
-    }
-  }
-  
-  if (opDisplayMode == OP_DISPLAY_NOT_FOUND && opNotFoundTime != -1) {
-    if ((millis() - opNotFoundTime) > OP_NOT_FOUND_DISPLAY_TIME) {
-      // Passou 1 segundo, volta a tentar ler
-      if (opMode == OP_MODE_IN) {
-        opDisplayMode = OP_DISPLAY_IN_READING;
+      // MODO OUT: apenas verifica se existe na lista local (sem lookup na BD)
+      Serial.print("[DB-OP] Verificando RFID na lista OUT: ");
+      Serial.println(lastRFIDOperador);
+      
+      bool exists = operadorExists(lastRFIDOperador);
+      
+      if (exists) {
+        // Remove da lista
+        removeOperador(lastRFIDOperador);
+        
+        // Grava na Supabase tempos (RFID, estação, ordem, tempo)
+        struct tm timeinfo;
+        if (getLocalTime(&timeinfo)) {
+          char timeStr[20];
+          strftime(timeStr, sizeof(timeStr), "%d/%m/%y %H:%M", &timeinfo);
+          String tempoAtual = String(timeStr);
+          
+          JsonDocument doc;
+          doc["operador"] = lastRFIDOperador;  // RFID é o ID
+          doc["tempo"] = tempoAtual;
+          doc["barco"] = varB;  // ordem_fabrico
+          doc["estacao"] = procurarEstacaoPorNome(varA);  // ID da estação
+          
+          supabaseGenericInsert("tempos", doc);
+          Serial.print("[DB] Tempo OUT registado: ");
+          Serial.println(lastRFIDOperador);
+        }
+        
+        // Atualiza varC com novo contador
+        updateVariable('C', String(operadoresCount));
+        
+        opDisplayMode = OP_DISPLAY_OUT_SUCCESS;
+        opFeedbackMessage = "removido";
+        
+        Serial.print("[RFID-OP] Operador OUT removido: ");
+        Serial.println(lastRFIDOperador);
       } else {
-        opDisplayMode = OP_DISPLAY_OUT_READING;
+        // Operador não está na lista local
+        opDisplayMode = OP_DISPLAY_NOT_FOUND;
+        opFeedbackMessage = "op nao existe na estacao";
+        Serial.print("[RFID-OP] Operador não consta da lista OUT: ");
+        Serial.println(lastRFIDOperador);
       }
-      operadorFromDatabase = "";
-      lastRFIDOperador = "";
-      opNotFoundTime = -1;
-      Serial.println("[RFID-OP] Voltou a tentar ler após 1 segundo");
     }
   }
 
