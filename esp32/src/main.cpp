@@ -464,18 +464,23 @@ void drawEditScreen() {
     // Modo edição de Op#
     u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");  // Rótulo sempre visível
     
-    // Mostra "In" ou "Out" a piscar se está em seleção de modo
+    // Mostra o estado apropriado conforme o modo
     if (opDisplayMode == OP_DISPLAY_MODE_SELECT) {
+      // Seleção de In/Out: mostra "In" ou "Out" a piscar
       if (blink) {
         u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, opMode == OP_MODE_IN ? "In" : "Out");  // Pisca
       }
     } 
-    // Se está em greeting, mostra "Olá nome"
-    else if (opGreetingStartTime != -1 && (millis() - opGreetingStartTime) < OP_GREETING_DISPLAY_TIME) {
-      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, ("Ola " + opGreetingName).c_str());
-    } 
-    // Senão mostra o contador de operadores
+    else if (opDisplayMode == OP_DISPLAY_IN_READING) {
+      // Ciclo IN: mostra "in ... a ler" a piscar
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, blink ? "in ... a ler" : "in");
+    }
+    else if (opDisplayMode == OP_DISPLAY_OUT_READING) {
+      // Ciclo OUT: mostra "out ... a ler" a piscar
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, blink ? "out ... a ler" : "out");
+    }
     else {
+      // Fora de leitura, mostra contador de operadores
       u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, String(operadoresCount).c_str());
     }
   } else {
@@ -486,32 +491,35 @@ void drawEditScreen() {
   
   // ===== LINHA 4: FEEDBACK =====
   if (editState == STATE_EDIT_VALUE && selectedField == 2) {
-    String displayOp = "";
+    String displayFeedback = "";
     
     switch (opDisplayMode) {
       case OP_DISPLAY_MODE_SELECT:
         // Nada a mostrar aqui quando selecionando In/Out
         break;
       case OP_DISPLAY_IN_READING:
-        displayOp = blink ? "in ... a ler" : "in";
+        // Durante leitura IN: nada na linha 4
         break;
       case OP_DISPLAY_IN_SUCCESS:
-        displayOp = "in sucesso";
+        // Sucesso IN: mostra "olá " + nome do operador
+        displayFeedback = "Ola " + operadorFromDatabase;
         break;
       case OP_DISPLAY_OUT_READING:
-        displayOp = blink ? "out ... a ler" : "out";
+        // Durante leitura OUT: nada na linha 4
         break;
       case OP_DISPLAY_OUT_SUCCESS:
-        displayOp = "out sucesso";
+        // Sucesso OUT: informação de remoção (se necessário)
+        displayFeedback = "removido";
         break;
       case OP_DISPLAY_NOT_FOUND:
-        displayOp = "op. nao encontrado";
+        // Erro: operador não encontrado na BD
+        displayFeedback = "erro op nao existe na bd";
         break;
       default:
         break;
     }
     
-    u8g2.drawStr(0, DISPLAY_LINE4_Y, displayOp.c_str());
+    u8g2.drawStr(0, DISPLAY_LINE4_Y, displayFeedback.c_str());
   } else {
     // Se não está em edição de Op#, mostra lastRfidValue (para debug)
     u8g2.drawStr(0, DISPLAY_LINE4_Y, lastRfidValue.c_str());
@@ -1196,6 +1204,13 @@ void loop() {
         if (!exists) {
           // Novo operador - adiciona à lista
           addOperador(lastRFIDOperador);
+          
+          // Grava na Supabase tempos
+          gravarTemposOperadores();
+          
+          // Atualiza varC com novo contador
+          updateVariable('C', String(operadoresCount));
+          
           opDisplayMode = OP_DISPLAY_IN_SUCCESS;
           
           // Inicia greeting
@@ -1207,6 +1222,11 @@ void loop() {
         } else {
           // Operador já existe - apenas mostra sucesso
           opDisplayMode = OP_DISPLAY_IN_SUCCESS;
+          
+          // Inicia greeting (mesmo que já exista)
+          opGreetingStartTime = millis();
+          opGreetingName = nomeOperador;
+          
           Serial.print("[RFID-OP] Operador já na lista: ");
           Serial.println(lastRFIDOperador);
         }
@@ -1237,7 +1257,20 @@ void loop() {
     }
   }
   
-  // ===== CONTROLE DE EXIBIÇÃO "OP. NÃO ENCONTRADO" =====
+  // ===== CONTROLE DE EXIBIÇÃO "OP. NÃO ENCONTRADO" E RESTART DO CICLO =====
+  if (opDisplayMode == OP_DISPLAY_IN_SUCCESS && opGreetingStartTime != -1) {
+    // Ciclo IN após sucesso: mostra greeting e volta a tentar ler após 2 segundos
+    if ((millis() - opGreetingStartTime) > OP_GREETING_DISPLAY_TIME) {
+      // Passou 2 segundos, volta a tentar ler
+      opDisplayMode = OP_DISPLAY_IN_READING;
+      operadorFromDatabase = "";
+      lastRFIDOperador = "";
+      opGreetingStartTime = -1;
+      opGreetingName = "";
+      Serial.println("[RFID-OP] Regressou ao ciclo IN após greeting");
+    }
+  }
+  
   if (opDisplayMode == OP_DISPLAY_NOT_FOUND && opNotFoundTime != -1) {
     if ((millis() - opNotFoundTime) > OP_NOT_FOUND_DISPLAY_TIME) {
       // Passou 1 segundo, volta a tentar ler
