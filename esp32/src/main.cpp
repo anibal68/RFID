@@ -928,6 +928,9 @@ void setup() {
   pinMode(BTN2, INPUT_PULLUP);
   pinMode(BTN3, INPUT_PULLUP);
   pinMode(BAT_PIN, INPUT);
+  
+  // Inicializa Speaker
+  setupSpeaker();
 
   // PN532 apenas após WiFi (menos carga na bateria no arranque)
   nfc.begin();
@@ -1246,6 +1249,9 @@ void loop() {
           opGreetingName = nomeOperador;
           opFeedbackMessage = "Ola " + nomeOperador;
           
+          // Beep agudo rápido para sucesso IN
+          beep(1200, 100);
+          
           Serial.print("[RFID-OP] NOVO operador IN adicionado: ");
           Serial.println(lastRFIDOperador);
         } else {
@@ -1256,6 +1262,9 @@ void loop() {
           opGreetingName = nomeOperador;
           opFeedbackMessage = "Ola " + nomeOperador;
           
+          // Beep agudo rápido para sucesso IN
+          beep(1200, 100);
+          
           Serial.print("[RFID-OP] Operador já na lista: ");
           Serial.println(lastRFIDOperador);
         }
@@ -1264,6 +1273,10 @@ void loop() {
         opDisplayMode = OP_DISPLAY_NOT_FOUND;
         opFeedbackMessage = "erro op nao existe na bd";
         operadorFromDatabase = "";
+        
+        // Beep grave para erro
+        beep(400, 200);
+        
         Serial.println("[DB] RFID não encontrado na BD operadores");
       }
     } else {
@@ -1301,12 +1314,19 @@ void loop() {
         opDisplayMode = OP_DISPLAY_OUT_SUCCESS;
         opFeedbackMessage = "removido";
         
+        // Beep médio rápido para sucesso OUT
+        beep(800, 100);
+        
         Serial.print("[RFID-OP] Operador OUT removido: ");
         Serial.println(lastRFIDOperador);
       } else {
         // Operador não está na lista local
         opDisplayMode = OP_DISPLAY_NOT_FOUND;
         opFeedbackMessage = "op nao existe na estacao";
+        
+        // Beep grave para erro
+        beep(400, 200);
+        
         Serial.print("[RFID-OP] Operador não consta da lista OUT: ");
         Serial.println(lastRFIDOperador);
       }
