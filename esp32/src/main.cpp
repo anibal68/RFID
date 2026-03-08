@@ -148,6 +148,11 @@ long opNotFoundTime = -1;
 const long OP_NOT_FOUND_DISPLAY_TIME = 2000;
 bool opReadingInProgress = false;
 
+// Controle de exibição "Olá nome do operador"
+long opGreetingStartTime = -1;
+const long OP_GREETING_DISPLAY_TIME = 2000;  // 2 segundos
+String opGreetingName = "";  // Nome a mostrar no greeting
+
 void goToSleep() {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
@@ -330,11 +335,28 @@ void drawEditScreen() {
     // Mostra o valor guardado (sempre visível)
     u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
   } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
-    // Modo edição de Op#: comportamento depende do modo de display
+    // Modo edição de Op#: mostra varC piscar
     u8g2.drawStr(0, 50, "Op#:");  // Rótulo sempre visível
     
+    // Se está em "greeting" (mostrando "Olá nome"), mostra isso
+    if (opGreetingStartTime != -1 && (millis() - opGreetingStartTime) < OP_GREETING_DISPLAY_TIME) {
+      // Ainda está no período de greeting
+      u8g2.drawStr(30, 50, ("Ola " + opGreetingName).c_str());
+    } else {
+      // Mostra varC piscar
+      if (blink) {
+        u8g2.drawStr(30, 50, String(operadoresLidosCount).c_str());  // Número de operadores
+      }
+    }
+  } else {
+    // Estado normal ou outro estado
+    u8g2.drawStr(0, 50, "Op#:");
+    u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+  }
+  
+  // ===== LINHA 5: FEEDBACK DE OP# =====
+  if (editState == STATE_EDIT_VALUE && selectedField == 2) {
     String displayOp = "";
-    bool shouldDisplay = true;
     
     if (opDisplayMode == OP_DISPLAY_READING) {
       // Mostra "... a ler" a piscar
@@ -343,29 +365,18 @@ void drawEditScreen() {
       // Mostra "... verificar" a piscar
       displayOp = blink ? "... verificar" : "";
     } else if (opDisplayMode == OP_DISPLAY_NOT_FOUND) {
-      // Mostra "não existe op" fixo (sem piscar)
-      displayOp = "nao existe";
-      shouldDisplay = true;
+      // Mostra "não existe op" fixo
+      displayOp = "nao existe op";
     } else if (opDisplayMode == OP_DISPLAY_FOUND) {
       // Mostra o operador encontrado a piscar
       displayOp = blink ? operadorFromDatabase : "";
-    } else {
-      // OP_DISPLAY_NORMAL
-      displayOp = operadoresLidosCount > 0 ? String(operadoresLidosCount) + " ops" : "---";
-      shouldDisplay = true;
     }
     
-    if (shouldDisplay) {
-      u8g2.drawStr(30, 50, displayOp.c_str());
-    }
+    u8g2.drawStr(0, 63, displayOp.c_str());
   } else {
-    // Estado normal ou outro estado
-    u8g2.drawStr(0, 50, "Op#:");
-    u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
+    // Se não está em edição de Op#, mostra lastRfidValue (para debug)
+    u8g2.drawStr(0, 63, lastRfidValue.c_str());
   }
-  
-  // Linha 5: Debug - Valor RFID lido
-  u8g2.drawStr(0, 63, lastRfidValue.c_str());
   
   u8g2.sendBuffer();
 }
@@ -389,9 +400,6 @@ void drawMainScreen() {
   // Linha 4: Número de Operadores
   u8g2.drawStr(0, 50, "Op#:");
   u8g2.drawStr(30, 50, varC == "" ? "---" : varC.c_str());
-  
-  // Linha 5: Teste
-  u8g2.drawStr(0, 63, "Teste");
   
   u8g2.sendBuffer();
 }
@@ -839,7 +847,7 @@ void loop() {
         // Est: confirma valor e sai de edição
         String estacaoSelecionada = procurarEstacao(currentEstacaoIndex + 1);
         updateVariable('A', estacaoSelecionada);
-        updateVariable('C', "0");
+        // Não reseta varC aqui - será feito apenas em Op#
         for (int i = 0; i < MAX_RFID_HISTORY; i++) {
           rfidHistory[i] = "";
         }
@@ -854,9 +862,8 @@ void loop() {
         rfidReadingInProgress = false;
         
         if (ordFromDatabase.length() > 0) {
-          // Se encontrou algo, guarda
+          // Se encontrou algo, guarda (mas não toca em varC - será feito em Op#)
           updateVariable('B', ordFromDatabase);
-          updateVariable('C', "0");
           for (int i = 0; i < MAX_RFID_HISTORY; i++) {
             rfidHistory[i] = "";
           }
@@ -885,6 +892,10 @@ void loop() {
         } else {
           Serial.println("[EDIT] Nenhum operador lido");
         }
+        
+        // Reset das variáveis de Op#
+        opGreetingStartTime = -1;
+        opGreetingName = "";
         
         editState = STATE_NORMAL;
         opDisplayMode = OP_DISPLAY_NORMAL;
@@ -1038,16 +1049,32 @@ void loop() {
           Serial.print("[DB] Operador encontrado: ");
           Serial.println(operadorFromDatabase);
           
-          // Adiciona ao array de operadores lidos (se houver espaço)
-          if (operadoresLidosCount < MAX_OPERADORES_LIDOS) {
+          // Verifica se é um operador novo (não foi lido antes nesta sessão)
+          bool isNewOperador = true;
+          for (int i = 0; i < operadoresLidosCount; i++) {
+            if (operadoresLidos[i].numero == opNumero) {
+              isNewOperador = false;
+              Serial.print("[RFID-OP] Operador já lido: ");
+              Serial.println(opNumero);
+              break;
+            }
+          }
+          
+          // Se é novo, adiciona ao array
+          if (isNewOperador && operadoresLidosCount < MAX_OPERADORES_LIDOS) {
             operadoresLidos[operadoresLidosCount].numero = opNumero;
             operadoresLidos[operadoresLidosCount].nome = result;
             operadoresLidosCount++;
-            Serial.print("[RFID-OP] Operador #");
+            
+            // Inicia greeting
+            opGreetingStartTime = millis();
+            opGreetingName = result;
+            
+            Serial.print("[RFID-OP] NOVO Operador #");
             Serial.print(operadoresLidosCount);
             Serial.print(": ");
             Serial.println(operadorFromDatabase);
-          } else {
+          } else if (operadoresLidosCount >= MAX_OPERADORES_LIDOS) {
             Serial.println("[RFID-OP] Array de operadores cheio!");
           }
         } else {
