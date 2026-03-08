@@ -495,14 +495,16 @@ void drawEditScreen() {
         // Nada a mostrar aqui quando selecionando In/Out
         break;
       case OP_DISPLAY_IN_READING:
-        // Durante leitura IN: nada na linha 4
+        // Durante leitura IN: mostra "... à espera"
+        displayFeedback = opFeedbackMessage;
         break;
       case OP_DISPLAY_IN_SUCCESS:
         // Sucesso IN: mostra mensagem persistente
         displayFeedback = opFeedbackMessage;
         break;
       case OP_DISPLAY_OUT_READING:
-        // Durante leitura OUT: nada na linha 4
+        // Durante leitura OUT: mostra "... à espera"
+        displayFeedback = opFeedbackMessage;
         break;
       case OP_DISPLAY_OUT_SUCCESS:
         // Sucesso OUT: mostra mensagem persistente
@@ -1168,7 +1170,10 @@ void loop() {
         lastRFIDOperador = rfidRead;
         opLookupPending = true;
         opLookupStartTime = millis();
-        opFeedbackMessage = "";  // Limpa mensagem anterior
+        // Mostra feedback imediato enquanto processa
+        opFeedbackMessage = "... à espera";
+        // Atualiza modo de display para mostrar "in/out ... a ler" a piscar
+        opDisplayMode = (opMode == OP_MODE_IN ? OP_DISPLAY_IN_READING : OP_DISPLAY_OUT_READING);
         Serial.print("[RFID-OP] Cartão lido: ");
         Serial.println(rfidRead);
       }
