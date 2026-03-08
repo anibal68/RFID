@@ -73,7 +73,7 @@ long lastBatteryCheck = 0;
 int cachedBattery = 0;
 long lastRssiCheck = 0;
 int cachedRssi = -100;
-const long checkInterval = 10000; // 10 segundos
+const long checkInterval = 5000; // 5 segundos
 
 // ===== SISTEMA DE EDIÇÃO =====
 enum EditState {
@@ -238,10 +238,10 @@ void drawEditScreen() {
     // Mostra o valor guardado (sempre visível)
     u8g2.drawStr(30, 20, varA == "" ? "---" : varA.c_str());
   } else if (editState == STATE_EDIT_VALUE && selectedField == 0) {
-    // Modo edição de Est: pisca o valor
+    // Modo edição de Est: pisca o valor (descrição em vez do nome)
     u8g2.drawStr(0, 20, "Est:");  // Rótulo sempre visível
     if (blink) {
-      u8g2.drawStr(30, 20, procurarEstacao(currentEstacaoIndex + 1).c_str());  // Pisca
+      u8g2.drawStr(30, 20, procurarDescricaoEstacao(currentEstacaoIndex + 1).c_str());  // Pisca
     }
   } else {
     // Estado normal ou outro estado
@@ -751,28 +751,27 @@ void loop() {
         Serial.println(estacaoSelecionada);
         Serial.println("[EDIT] Voltou ao modo normal");
       } else if (selectedField == 1) {
-        // Ord: se BD encontrou valor, confirma e sai; se não encontrou, volta a ler
+        // Ord: SEMPRE sai ao pressionar Enter (mesmo que não tenha encontrado nada)
         rfidReadingInProgress = false;
+        
         if (ordFromDatabase.length() > 0) {
-          // Confirma o valor encontrado e sai de edição
+          // Se encontrou algo, guarda
           updateVariable('B', ordFromDatabase);
           updateVariable('C', "0");
           for (int i = 0; i < MAX_RFID_HISTORY; i++) {
             rfidHistory[i] = "";
           }
           rfidHistoryIndex = 0;
-          editState = STATE_NORMAL;
-          ordDisplayMode = ORD_DISPLAY_NORMAL;
           Serial.print("[EDIT] Confirmou ordem: ");
           Serial.println(ordFromDatabase);
-          Serial.println("[EDIT] Voltou ao modo normal");
         } else {
-          // Nenhum valor encontrado ainda - volta a ler
-          rfidReadingInProgress = true;
-          rfidReadStart = millis();
-          ordDisplayMode = ORD_DISPLAY_READING;
-          Serial.println("[EDIT] Nenhuma ordem encontrada, voltou a ler");
+          // Se não encontrou, mantém o valor anterior
+          Serial.println("[EDIT] Saiu da leitura RFID sem encontrar ordem");
         }
+        
+        editState = STATE_NORMAL;
+        ordDisplayMode = ORD_DISPLAY_NORMAL;
+        Serial.println("[EDIT] Voltou ao modo normal");
       } else if (selectedField == 2) {
         // Op#: confirma e sai (por implementar)
         editState = STATE_NORMAL;

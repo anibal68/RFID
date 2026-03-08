@@ -98,6 +98,16 @@ int procurarIndiceEstacao(String nome) {
   return 0;  // Default ao índice 0 se não encontrar
 }
 
+// Busca descrição da estação pelo ID
+String procurarDescricaoEstacao(int id) {
+  for (int i = 0; i < NUM_ESTACOES; i++) {
+    if (estacoes[i].id == id) {
+      return estacoes[i].descricao;
+    }
+  }
+  return "NAO_ENCONTRADA";
+}
+
 // Lista todas as estações no Serial (debug)
 void listarEstacoes() {
   Serial.println("\n===== ESTACOES DISPONIVEIS (50 TOTAL) =====");
