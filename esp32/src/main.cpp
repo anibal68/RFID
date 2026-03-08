@@ -1316,15 +1316,33 @@ void loop() {
           strftime(timeStr, sizeof(timeStr), "%d/%m/%y %H:%M", &timeinfo);
           String tempoAtual = String(timeStr);
           
+          int estacaoID = procurarEstacaoPorNome(varA);
+          
+          // DEBUG: mostra valores antes de enviar
+          Serial.print("[DB-OUT] Valores a enviar: rfid=");
+          Serial.print(lastRFIDOperador);
+          Serial.print(", tempo=");
+          Serial.print(tempoAtual);
+          Serial.print(", barco=");
+          Serial.print(varB);
+          Serial.print(", estacao=");
+          Serial.println(estacaoID);
+          
           JsonDocument doc;
           doc["rfid"] = lastRFIDOperador;  // RFID do operador
           doc["tempo"] = tempoAtual;
           doc["barco"] = varB;  // ordem_fabrico
-          doc["estacao"] = procurarEstacaoPorNome(varA);  // ID da estação
+          doc["estacao"] = estacaoID;  // ID da estação
           
-          supabaseGenericInsert("tempos", doc);
-          Serial.print("[DB] Tempo OUT registado: ");
-          Serial.println(lastRFIDOperador);
+          if (supabaseGenericInsert("tempos", doc)) {
+            Serial.print("[DB] Tempo OUT registado com sucesso: ");
+            Serial.println(lastRFIDOperador);
+          } else {
+            Serial.print("[DB] Falha ao registar tempo OUT: ");
+            Serial.println(lastRFIDOperador);
+          }
+        } else {
+          Serial.println("[DB] Falha ao obter hora para OUT");
         }
         
         // Atualiza varC com novo contador
