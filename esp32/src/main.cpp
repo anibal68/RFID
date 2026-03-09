@@ -1058,6 +1058,15 @@ void loop() {
         lastRFIDSuccess = "";
         ordFromDatabase = "";
         ordDisplayMode = ORD_DISPLAY_READING;  // Começa com "... a ler"
+        
+        // Se já existe ordem em varB (ex: após reinício), inicializa lastOrdRead
+        if (varB.length() > 0) {
+          lastOrdRead = varB;
+          ordInitialized = true;
+          Serial.print("[EDIT] Restaurado estado de ordem anterior: ");
+          Serial.println(varB);
+        }
+        
         editModeStart = millis();
         lastStateChangeTime = millis();
         Serial.println("[EDIT] Entrou em modo edição de Ordem - Iniciando leitura RFID");
@@ -1205,6 +1214,8 @@ void loop() {
         // Ord: se está em ORD_DISPLAY_CONFIRM, volta a "... a ler"
         if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
           ordDisplayMode = ORD_DISPLAY_READING;
+          ordReadOnceSuccess = false;  // Permite nova leitura
+          editModeStart = millis();  // Reset timeout para novo ciclo de leitura
           Serial.println("[EDIT] Voltou a ler ordem (cancelou terminar)");
         }
       } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
@@ -1239,6 +1250,8 @@ void loop() {
         // Ord: se está em ORD_DISPLAY_CONFIRM, volta a "... a ler"
         if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
           ordDisplayMode = ORD_DISPLAY_READING;
+          ordReadOnceSuccess = false;  // Permite nova leitura
+          editModeStart = millis();  // Reset timeout para novo ciclo de leitura
           Serial.println("[EDIT] Voltou a ler ordem (cancelou terminar)");
         }
       } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
@@ -1270,12 +1283,9 @@ void loop() {
           ordReadOnceSuccess = true;  // MARCA: já teve uma leitura bem-sucedida, para de ler
           Serial.print("[RFID] Cartão lido: ");
           Serial.println(rfidRead);
+          editModeStart = millis();  // Reset de timeout quando lê com sucesso
         }
-        editModeStart = millis();  // Reset de timeout a cada leitura bem-sucedida
       }
-    } else {
-      // Já teve leitura bem-sucedida - apenas atualiza o timeout
-      editModeStart = millis();
     }
   }
   
