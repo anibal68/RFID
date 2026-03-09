@@ -850,6 +850,37 @@ bool supabaseGenericInsert(String table, JsonDocument data) {
   }
 }
 
+// Grava um único operador na tabela "tempos"
+bool gravarTempoOperador(String rfid, String estado) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[DB] Offline - não conseguiu gravar tempo");
+    return false;
+  }
+
+  // Obtém data/hora em formato dd/mm/aa hh:mm
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("[DB] Não conseguiu obter hora");
+    return false;
+  }
+  
+  char timeStr[20];
+  strftime(timeStr, sizeof(timeStr), "%d/%m/%y %H:%M", &timeinfo);
+  String tempoAtual = String(timeStr);
+
+  // Valida dados obrigatórios
+  int estacaoID = procurarEstacaoPorNome(varA);
+  
+  JsonDocument doc;
+  doc["rfid"] = rfid;
+  doc["tempo"] = tempoAtual;
+  doc["ordem_fabrico"] = varB;
+  doc["estacao"] = estacaoID;
+  doc["estado"] = estado;  // "in" ou "out"
+
+  return supabaseGenericInsert("tempos", doc);
+}
+
 // Grava os operadores atuais na tabela "tempos"
 bool gravarTemposOperadores() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -885,6 +916,7 @@ bool gravarTemposOperadores() {
     doc["tempo"] = tempoAtual;
     doc["ordem_fabrico"] = varB;  // ordem_fabrico
     doc["estacao"] = estacaoID;  // ID da estação
+    doc["estado"] = "in";  // Marca como entrada
 
     if (!supabaseGenericInsert("tempos", doc)) {
       allSuccess = false;
@@ -1256,8 +1288,8 @@ void loop() {
           // Novo operador - adiciona à lista
           addOperador(lastRFIDOperador);
           
-          // Grava na Supabase tempos
-          gravarTemposOperadores();
+          // Grava apenas este operador na Supabase tempos
+          gravarTempoOperador(lastRFIDOperador, "in");
           
           // Atualiza varC com novo contador
           updateVariable('C', String(operadoresCount));
@@ -1333,6 +1365,7 @@ void loop() {
           doc["tempo"] = tempoAtual;
           doc["ordem_fabrico"] = varB;  // ordem_fabrico
           doc["estacao"] = estacaoID;  // ID da estação
+          doc["estado"] = "out";  // Marca como saída
           
           if (supabaseGenericInsert("tempos", doc)) {
             Serial.print("[DB] Tempo OUT registado com sucesso: ");
