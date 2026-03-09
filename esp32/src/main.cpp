@@ -858,8 +858,8 @@ bool supabaseGenericInsert(String table, JsonDocument data) {
   }
 }
 
-// Grava um único operador na tabela "tempos"
-bool gravarTempoOperador(String rfid, String estado) {
+// Grava um único operador ou ordem na tabela "tempos"
+bool gravarTempoOperador(String rfid, String ordem_fabrico, String estado) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[DB] Offline - não conseguiu gravar tempo");
     return false;
@@ -882,7 +882,7 @@ bool gravarTempoOperador(String rfid, String estado) {
   JsonDocument doc;
   doc["rfid"] = rfid;
   doc["tempo"] = tempoAtual;
-  doc["ordem_fabrico"] = varB;
+  doc["ordem_fabrico"] = ordem_fabrico;
   doc["estacao"] = estacaoID;
   doc["estado"] = estado;  // "in" ou "out"
 
@@ -1080,7 +1080,7 @@ void loop() {
           
           // Grava como saída
           if (ordFromDatabase.length() > 0) {
-            gravarTempoOperador(varC, ordFromDatabase, "out");  // Usa varC (número de operadores) como referência
+            gravarTempoOperador("", ordFromDatabase, "out");  // Ordem termina
             Serial.print("[DB] Ordem terminada: ");
             Serial.println(ordFromDatabase);
           }
@@ -1100,7 +1100,7 @@ void loop() {
           
           if (ordFromDatabase.length() > 0 && !ordInitialized) {
             // Primeira ordem - grava como entrada
-            gravarTempoOperador(varC, ordFromDatabase, "in");
+            gravarTempoOperador("", ordFromDatabase, "in");
             ordInitialized = true;
             lastOrdRead = ordFromDatabase;
             updateVariable('B', ordFromDatabase);
@@ -1175,6 +1175,12 @@ void loop() {
         editModeStart = millis();  // Reset timeout
         Serial.print("[EDIT] Estação anterior: ");
         Serial.println(procurarEstacao(currentEstacaoIndex + 1));
+      } else if (editState == STATE_EDIT_VALUE && selectedField == 1) {
+        // Ord: se está em ORD_DISPLAY_CONFIRM, volta a "... a ler"
+        if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
+          ordDisplayMode = ORD_DISPLAY_READING;
+          Serial.println("[EDIT] Voltou a ler ordem (cancelou terminar)");
+        }
       } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
         // Comuta entre In e Out
         if (opDisplayMode == OP_DISPLAY_MODE_SELECT) {
@@ -1203,6 +1209,12 @@ void loop() {
         editModeStart = millis();  // Reset timeout
         Serial.print("[EDIT] Próxima estação: ");
         Serial.println(procurarEstacao(currentEstacaoIndex + 1));
+      } else if (editState == STATE_EDIT_VALUE && selectedField == 1) {
+        // Ord: se está em ORD_DISPLAY_CONFIRM, volta a "... a ler"
+        if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
+          ordDisplayMode = ORD_DISPLAY_READING;
+          Serial.println("[EDIT] Voltou a ler ordem (cancelou terminar)");
+        }
       } else if (editState == STATE_EDIT_VALUE && selectedField == 2) {
         // Comuta entre In e Out
         if (opDisplayMode == OP_DISPLAY_MODE_SELECT) {
@@ -1249,9 +1261,19 @@ void loop() {
     if (result != "Nao encontrado" && result != "Erro: Offline") {
       // Ordem encontrada!
       ordFromDatabase = result;
-      ordDisplayMode = ORD_DISPLAY_FOUND;  // Muda para mostrar valor a piscar
-      Serial.print("[DB] Ordem encontrada: ");
-      Serial.println(result);
+      
+      // Verifica se é a mesma ordem (para pedir confirmação de terminar)
+      if (ordInitialized && result == lastOrdRead) {
+        // Mesma ordem lida novamente - pede confirmação
+        ordDisplayMode = ORD_DISPLAY_CONFIRM;
+        Serial.print("[DB] Mesma ordem lida novamente, aguardando confirmação: ");
+        Serial.println(result);
+      } else {
+        // Primeira ordem ou ordem diferente
+        ordDisplayMode = ORD_DISPLAY_FOUND;  // Muda para mostrar valor a piscar
+        Serial.print("[DB] Ordem encontrada: ");
+        Serial.println(result);
+      }
     } else {
       // Ordem não encontrada
       ordDisplayMode = ORD_DISPLAY_NOT_FOUND;  // Muda para "não existe ord"
@@ -1329,7 +1351,7 @@ void loop() {
           addOperador(lastRFIDOperador);
           
           // Grava apenas este operador na Supabase tempos
-          gravarTempoOperador(lastRFIDOperador, "in");
+          gravarTempoOperador(lastRFIDOperador, varB, "in");
           
           // Atualiza varC com novo contador
           updateVariable('C', String(operadoresCount));
