@@ -113,7 +113,8 @@ enum OrdDisplayMode {
   ORD_DISPLAY_READING = 1,   // Mostra "... a ler" a piscar
   ORD_DISPLAY_VERIFYING = 2, // Mostra "... verificar" a piscar
   ORD_DISPLAY_NOT_FOUND = 3, // Mostra "não existe ord" fixo (2 seg)
-  ORD_DISPLAY_FOUND = 4      // Mostra valor encontrado a piscar
+  ORD_DISPLAY_FOUND = 4,     // Mostra valor encontrado a piscar
+  ORD_DISPLAY_CONFIRM = 5    // Mostra "terminar?" a piscar
 };
 OrdDisplayMode ordDisplayMode = ORD_DISPLAY_NORMAL;
 long ordNotFoundTime = -1;  // Quando iniciou exibição "não existe ord"
@@ -123,6 +124,10 @@ const long ORD_NOT_FOUND_DISPLAY_TIME = 2000; // 2 segundos
 bool ordLookupPending = false;  // Flag para aguardar antes de fazer lookup
 long ordLookupStartTime = -1;   // Quando começou o delay
 const long ORD_LOOKUP_DELAY = 500; // 500ms antes de fazer a lookup
+
+// Variáveis para controle de ordem (in/out)
+bool ordInitialized = false;    // Se ordem foi iniciada (lida 1ª vez)
+String lastOrdRead = "";        // Última ordem lida
 
 // ===== OPERADORES (Op#) - Novos estados In/Out =====
 enum OpMode {
@@ -433,6 +438,9 @@ void drawEditScreen() {
     } else if (ordDisplayMode == ORD_DISPLAY_FOUND) {
       // Mostra o valor encontrado a piscar
       displayOrd = blink ? ordFromDatabase : "";
+    } else if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
+      // Mostra "terminar?" a piscar
+      displayOrd = blink ? "terminar?" : ordFromDatabase;
     } else {
       // ORD_DISPLAY_NORMAL
       displayOrd = ordFromDatabase.length() > 0 ? ordFromDatabase : "---";
@@ -1066,22 +1074,54 @@ void loop() {
         Serial.println(estacaoSelecionada);
         Serial.println("[EDIT] Voltou ao modo normal");
       } else if (selectedField == 1) {
-        // Ord: SEMPRE sai ao pressionar Enter (mesmo que não tenha encontrado nada)
-        rfidReadingInProgress = false;
-        
-        if (ordFromDatabase.length() > 0) {
-          // Se encontrou algo, guarda
-          updateVariable('B', ordFromDatabase);
-          Serial.print("[EDIT] Confirmou ordem: ");
-          Serial.println(ordFromDatabase);
+        // Ord: lógica depende do modo de display
+        if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
+          // Está a confirmar "terminar?" - grava como OUT
+          
+          // Grava como saída
+          if (ordFromDatabase.length() > 0) {
+            gravarTempoOperador(varC, ordFromDatabase, "out");  // Usa varC (número de operadores) como referência
+            Serial.print("[DB] Ordem terminada: ");
+            Serial.println(ordFromDatabase);
+          }
+          
+          // Limpa tudo e sai
+          updateVariable('B', "");  // Limpa varB
+          ordFromDatabase = "";
+          ordInitialized = false;
+          lastOrdRead = "";
+          rfidReadingInProgress = false;
+          editState = STATE_NORMAL;
+          ordDisplayMode = ORD_DISPLAY_NORMAL;
+          Serial.println("[EDIT] Ordem terminada e variável B limpa");
         } else {
-          // Se não encontrou, mantém o valor anterior
-          Serial.println("[EDIT] Saiu da leitura RFID sem encontrar ordem");
+          // Está em leitura ou mostrou ordem - sai normalmente
+          rfidReadingInProgress = false;
+          
+          if (ordFromDatabase.length() > 0 && !ordInitialized) {
+            // Primeira ordem - grava como entrada
+            gravarTempoOperador(varC, ordFromDatabase, "in");
+            ordInitialized = true;
+            lastOrdRead = ordFromDatabase;
+            updateVariable('B', ordFromDatabase);
+            Serial.print("[DB] Ordem iniciada: ");
+            Serial.println(ordFromDatabase);
+          } else if (ordFromDatabase.length() > 0) {
+            // Ordem existente - confirma variável
+            updateVariable('B', ordFromDatabase);
+            Serial.print("[EDIT] Confirmou ordem: ");
+            Serial.println(ordFromDatabase);
+          } else {
+            Serial.println("[EDIT] Saiu da leitura RFID sem encontrar ordem");
+          }
+          
+          editState = STATE_NORMAL;
+          ordDisplayMode = ORD_DISPLAY_NORMAL;
+          ordInitialized = false;
+          lastOrdRead = "";
+          Serial.println("[EDIT] Voltou ao modo normal");
         }
-        
-        editState = STATE_NORMAL;
-        ordDisplayMode = ORD_DISPLAY_NORMAL;
-        Serial.println("[EDIT] Voltou ao modo normal");
+
       } else if (selectedField == 2) {
         // Op#: comportamento depende do modo de display
         if (opDisplayMode == OP_DISPLAY_MODE_SELECT) {
