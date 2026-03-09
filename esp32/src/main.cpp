@@ -114,7 +114,8 @@ enum OrdDisplayMode {
   ORD_DISPLAY_VERIFYING = 2, // Mostra "... verificar" a piscar
   ORD_DISPLAY_NOT_FOUND = 3, // Mostra "não existe ord" fixo (2 seg)
   ORD_DISPLAY_FOUND = 4,     // Mostra valor encontrado a piscar
-  ORD_DISPLAY_CONFIRM = 5    // Mostra "terminar?" a piscar
+  ORD_DISPLAY_CONFIRM = 5,   // Mostra "terminar?" a piscar
+  ORD_DISPLAY_WRITING = 6    // Mostra "a escrever" enquanto grava na BD
 };
 OrdDisplayMode ordDisplayMode = ORD_DISPLAY_NORMAL;
 long ordNotFoundTime = -1;  // Quando iniciou exibição "não existe ord"
@@ -129,6 +130,7 @@ const long ORD_LOOKUP_DELAY = 500; // 500ms antes de fazer a lookup
 bool ordInitialized = false;    // Se ordem foi iniciada (lida 1ª vez)
 String lastOrdRead = "";        // Última ordem lida
 long ordConfirmStartTime = -1;  // Quando entrou em modo CONFIRM (para alternância)
+bool ordReadOnceSuccess = false; // Flag para parar de ler após 1ª leitura bem-sucedida
 
 // ===== OPERADORES (Op#) - Novos estados In/Out =====
 enum OpMode {
@@ -443,6 +445,9 @@ void drawEditScreen() {
       // Mostra "terminar?" e ordem alternando (com período maior para ser bem visível)
       bool confirmBlink = ((millis() - ordConfirmStartTime) / 800) % 2;  // 800ms cada estado
       displayOrd = confirmBlink ? "terminar?" : ordFromDatabase;
+    } else if (ordDisplayMode == ORD_DISPLAY_WRITING) {
+      // Mostra "a escrever" enquanto grava na BD
+      displayOrd = blink ? "a escrever" : "";
     } else {
       // ORD_DISPLAY_NORMAL
       displayOrd = ordFromDatabase.length() > 0 ? ordFromDatabase : "---";
@@ -1029,13 +1034,14 @@ void loop() {
     if (editState == STATE_NORMAL) {
       // Entra em modo seleção de campo
       editState = STATE_SELECT_FIELD;
-      selectedField = 0;  // Começa em Est
+      selectedField = 1;  // Começa em Ord
       currentEstacaoIndex = procurarIndiceEstacao(varA);
       editModeStart = millis();
       lastStateChangeTime = millis();
       rfidReadingInProgress = false;
+      ordReadOnceSuccess = false;  // Reset quando sai
       lastRFIDSuccess = "";
-      Serial.println("[EDIT] Entrou em modo seleção de campo (Est)");
+      Serial.println("[EDIT] Entrou em modo seleção de campo (Ord)");
     } else if (editState == STATE_SELECT_FIELD) {
       // Confirmação do campo selecionado
       if (selectedField == 0) {
@@ -1072,6 +1078,7 @@ void loop() {
         updateVariable('A', estacaoSelecionada);
         editState = STATE_NORMAL;
         rfidReadingInProgress = false;
+        ordReadOnceSuccess = false;  // Reset quando sai
         Serial.print("[EDIT] Confirmou estação: ");
         Serial.println(estacaoSelecionada);
         Serial.println("[EDIT] Voltou ao modo normal");
@@ -1079,6 +1086,7 @@ void loop() {
         // Ord: lógica depende do modo de display
         if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
           // Está a confirmar "terminar?" - grava como OUT
+          ordDisplayMode = ORD_DISPLAY_WRITING;  // Mostra "a escrever"
           
           // Grava como saída
           if (ordFromDatabase.length() > 0) {
@@ -1093,6 +1101,7 @@ void loop() {
           ordInitialized = false;
           lastOrdRead = "";
           ordConfirmStartTime = -1;  // Reset da alternância
+          ordReadOnceSuccess = false;  // Reset quando sai do modo
           rfidReadingInProgress = false;
           editState = STATE_NORMAL;
           ordDisplayMode = ORD_DISPLAY_NORMAL;
@@ -1100,9 +1109,11 @@ void loop() {
         } else {
           // Está em leitura ou mostrou ordem - sai normalmente
           rfidReadingInProgress = false;
+          ordReadOnceSuccess = false;  // Reset quando sai do modo
           
           if (ordFromDatabase.length() > 0 && !ordInitialized) {
             // Primeira ordem - grava como entrada
+            ordDisplayMode = ORD_DISPLAY_WRITING;  // Mostra "a escrever"
             gravarTempoOperador("", ordFromDatabase, "in");
             ordInitialized = true;
             lastOrdRead = ordFromDatabase;
@@ -1111,11 +1122,12 @@ void loop() {
             Serial.println(ordFromDatabase);
           } else if (ordFromDatabase.length() > 0 && ordInitialized && ordFromDatabase != lastOrdRead) {
             // Ordem diferente da anterior - grava anterior como OUT e nova como IN
+            ordDisplayMode = ORD_DISPLAY_WRITING;  // Mostra "a escrever"
             gravarTempoOperador("", lastOrdRead, "out");
             Serial.print("[DB] Ordem anterior terminada: ");
             Serial.println(lastOrdRead);
             
-            gravarTempoOperador("", ordFromDatabase, "in");
+            gravarTempoOperador("", ordFromDatabase, "in");  // Já está em WRITING do passo anterior
             lastOrdRead = ordFromDatabase;
             updateVariable('B', ordFromDatabase);
             Serial.print("[DB] Nova ordem iniciada: ");
@@ -1243,22 +1255,27 @@ void loop() {
 
   // ===== LEITURA RFID CONTÍNUA PARA CAMPO ORD =====
   if (rfidReadingInProgress && selectedField == 1 && editState == STATE_EDIT_VALUE) {
-    // Tenta ler um cartão RFID de forma contínua
-    String rfidRead = readRFIDCard();
-    
-    if (rfidRead.length() > 0) {
-      // Cartão lido com sucesso - guarda e processa
-      if (lastRFIDSuccess != rfidRead) {
-        // Novo RFID (diferente do anterior)
-        lastRFIDSuccess = rfidRead;
-        ordDisplayMode = ORD_DISPLAY_VERIFYING;  // Muda para "... verificar"
-        ordLookupPending = true;  // Marca para fazer lookup depois
-        ordLookupStartTime = millis();  // Inicia o delay
-        Serial.print("[RFID] Cartão lido: ");
-        Serial.println(rfidRead);
+    // Tenta ler um cartão RFID de forma contínua, mas só processa uma leitura bem-sucedida
+    if (!ordReadOnceSuccess) {  // Só lê se ainda não teve sucesso neste ciclo
+      String rfidRead = readRFIDCard();
+      
+      if (rfidRead.length() > 0) {
+        // Cartão lido com sucesso - guarda e processa
+        if (lastRFIDSuccess != rfidRead) {
+          // Novo RFID (diferente do anterior)
+          lastRFIDSuccess = rfidRead;
+          ordDisplayMode = ORD_DISPLAY_VERIFYING;  // Muda para "... verificar"
+          ordLookupPending = true;  // Marca para fazer lookup depois
+          ordLookupStartTime = millis();  // Inicia o delay
+          ordReadOnceSuccess = true;  // MARCA: já teve uma leitura bem-sucedida, para de ler
+          Serial.print("[RFID] Cartão lido: ");
+          Serial.println(rfidRead);
+        }
+        editModeStart = millis();  // Reset de timeout a cada leitura bem-sucedida
       }
-      // Continua tentando ler (não para após o 1º)
-      editModeStart = millis();  // Reset de timeout a cada leitura bem-sucedida
+    } else {
+      // Já teve leitura bem-sucedida - apenas atualiza o timeout
+      editModeStart = millis();
     }
   }
   
@@ -1495,6 +1512,7 @@ void loop() {
   if (editState != STATE_NORMAL && (millis() - editModeStart) > EDIT_TIMEOUT) {
     editState = STATE_NORMAL;
     rfidReadingInProgress = false;
+    ordReadOnceSuccess = false;  // Reset quando timeout
     lastRFIDSuccess = "";
     ordFromDatabase = "";
     // Mantém lastRfidValue com o último valor para feedback ao sair
