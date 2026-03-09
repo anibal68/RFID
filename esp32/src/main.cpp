@@ -128,6 +128,7 @@ const long ORD_LOOKUP_DELAY = 500; // 500ms antes de fazer a lookup
 // Variáveis para controle de ordem (in/out)
 bool ordInitialized = false;    // Se ordem foi iniciada (lida 1ª vez)
 String lastOrdRead = "";        // Última ordem lida
+long ordConfirmStartTime = -1;  // Quando entrou em modo CONFIRM (para alternância)
 
 // ===== OPERADORES (Op#) - Novos estados In/Out =====
 enum OpMode {
@@ -439,8 +440,9 @@ void drawEditScreen() {
       // Mostra o valor encontrado a piscar
       displayOrd = blink ? ordFromDatabase : "";
     } else if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
-      // Mostra "terminar?" a piscar
-      displayOrd = blink ? "terminar?" : ordFromDatabase;
+      // Mostra "terminar?" e ordem alternando (com período maior para ser bem visível)
+      bool confirmBlink = ((millis() - ordConfirmStartTime) / 800) % 2;  // 800ms cada estado
+      displayOrd = confirmBlink ? "terminar?" : ordFromDatabase;
     } else {
       // ORD_DISPLAY_NORMAL
       displayOrd = ordFromDatabase.length() > 0 ? ordFromDatabase : "---";
@@ -1090,6 +1092,7 @@ void loop() {
           ordFromDatabase = "";
           ordInitialized = false;
           lastOrdRead = "";
+          ordConfirmStartTime = -1;  // Reset da alternância
           rfidReadingInProgress = false;
           editState = STATE_NORMAL;
           ordDisplayMode = ORD_DISPLAY_NORMAL;
@@ -1106,8 +1109,19 @@ void loop() {
             updateVariable('B', ordFromDatabase);
             Serial.print("[DB] Ordem iniciada: ");
             Serial.println(ordFromDatabase);
+          } else if (ordFromDatabase.length() > 0 && ordInitialized && ordFromDatabase != lastOrdRead) {
+            // Ordem diferente da anterior - grava anterior como OUT e nova como IN
+            gravarTempoOperador("", lastOrdRead, "out");
+            Serial.print("[DB] Ordem anterior terminada: ");
+            Serial.println(lastOrdRead);
+            
+            gravarTempoOperador("", ordFromDatabase, "in");
+            lastOrdRead = ordFromDatabase;
+            updateVariable('B', ordFromDatabase);
+            Serial.print("[DB] Nova ordem iniciada: ");
+            Serial.println(ordFromDatabase);
           } else if (ordFromDatabase.length() > 0) {
-            // Ordem existente - confirma variável
+            // Ordem existente (mesma anterior) - confirma variável
             updateVariable('B', ordFromDatabase);
             Serial.print("[EDIT] Confirmou ordem: ");
             Serial.println(ordFromDatabase);
@@ -1117,8 +1131,8 @@ void loop() {
           
           editState = STATE_NORMAL;
           ordDisplayMode = ORD_DISPLAY_NORMAL;
-          ordInitialized = false;
-          lastOrdRead = "";
+          ordConfirmStartTime = -1;  // Reset da alternância
+          // NÃO limpa ordInitialized e lastOrdRead aqui - mantém estado para próxima leitura!
           Serial.println("[EDIT] Voltou ao modo normal");
         }
 
@@ -1266,6 +1280,7 @@ void loop() {
       if (ordInitialized && result == lastOrdRead) {
         // Mesma ordem lida novamente - pede confirmação
         ordDisplayMode = ORD_DISPLAY_CONFIRM;
+        ordConfirmStartTime = millis();  // Marca início da alternância
         Serial.print("[DB] Mesma ordem lida novamente, aguardando confirmação: ");
         Serial.println(result);
       } else {
