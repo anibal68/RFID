@@ -43,7 +43,7 @@ const char *supabase_key =
 int lastPressed = -1;
 
 long lastActivityTime = 0;
-const long sleepTimeout = 30000; // 30 segundos
+const long sleepTimeout = 30000; // 30 segundos de inatividade (debug)
 long lastNfcPollTime = 0;        // Para evitar lag no loop
 
 // ===== PERSISTÊNCIA DE DADOS (NVS) =====
@@ -180,18 +180,31 @@ bool addOperador(String rfid);
 bool removeOperador(String rfid);
 
 void goToSleep() {
+  // Aguarda um pouco para os botões estarem definitivamente soltos (sem ruído)
+  delay(500);
+  
+  // Verifica que todos os botões estão HIGH (soltos)
+  if (digitalRead(BTN1) == LOW || digitalRead(BTN2) == LOW || digitalRead(BTN3) == LOW) {
+    Serial.println("[SLEEP] Botão ainda pressionado, adiando sleep");
+    lastActivityTime = millis();  // Adia o sleep
+    return;
+  }
+  
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
   u8g2.drawStr(0, 10, "Entrando em Sleep...");
-  u8g2.drawStr(0, 30, "Acorde pelo G1");
+  u8g2.drawStr(0, 30, "Acorde por B1/B2/B3");
   u8g2.sendBuffer();
   delay(1000);
   u8g2.setPowerSave(1); // Desliga o display para economizar energia
 
-  // Configura despertar por GPIO12 (LOW level) - ESP32 clássico
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 0); // 0 = LOW level
+  // Configura despertar por múltiplos GPIOs (LOW level)
+  // Usa ext1_wakeup para 3 botões: GPIO12 (BTN1), GPIO14 (BTN2), GPIO13 (BTN3)
+  uint64_t mask = (1ULL << GPIO_NUM_12) | (1ULL << GPIO_NUM_14) | (1ULL << GPIO_NUM_13);
+  esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ALL_LOW);  // Acorda quando qualquer um estiver LOW
 
   Serial.println("Indo para Deep Sleep agora...");
+  Serial.println("Wake sources: BTN1 (GPIO12), BTN2 (GPIO14), BTN3 (GPIO13)");
   Serial.flush();
   esp_deep_sleep_start();
 }
@@ -1030,6 +1043,7 @@ void loop() {
   // Processa a libertação da tecla (SHORT PRESS)
   if (btn2State == HIGH && btn2Pressed) {
     btn2Pressed = false;  // Reset
+    lastActivityTime = millis();  // Reset timer de sleep
     
     if (editState == STATE_NORMAL) {
       // Entra em modo seleção de campo
@@ -1196,6 +1210,7 @@ void loop() {
   
   // BTN1 (Cima) - navega para trás no array
   if (btn1State == LOW && btn1LastState == HIGH) {
+    lastActivityTime = millis();  // Reset timer de sleep
     if (editState != STATE_NORMAL) {
       if (editState == STATE_SELECT_FIELD) {
         // Roda entre Est, Ord, Op#
@@ -1232,6 +1247,7 @@ void loop() {
   
   // BTN3 (Baixo) - navega para frente no array
   if (btn3State == LOW && btn3LastState == HIGH) {
+    lastActivityTime = millis();  // Reset timer de sleep
     if (editState != STATE_NORMAL) {
       if (editState == STATE_SELECT_FIELD) {
         // Roda entre Est, Ord, Op#
@@ -1284,6 +1300,7 @@ void loop() {
           Serial.print("[RFID] Cartão lido: ");
           Serial.println(rfidRead);
           editModeStart = millis();  // Reset de timeout quando lê com sucesso
+          lastActivityTime = millis();  // Reset timer de sleep
         }
       }
     }
@@ -1361,6 +1378,7 @@ void loop() {
         }
         // Reset timeout a cada leitura bem-sucedida
         editModeStart = millis();
+        lastActivityTime = millis();  // Reset timer de sleep
       }
     }
   }
@@ -1527,6 +1545,12 @@ void loop() {
     ordFromDatabase = "";
     // Mantém lastRfidValue com o último valor para feedback ao sair
     Serial.println("[EDIT] Saiu por timeout");
+  }
+
+  // ===== VERIFICAR TIMEOUT PARA DEEP SLEEP (3 minutos) =====
+  if (millis() - lastActivityTime > sleepTimeout) {
+    Serial.println("[SLEEP] Timeout atingido - entrando em Deep Sleep");
+    goToSleep();
   }
 
   // Atualiza estados anteriores
