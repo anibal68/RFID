@@ -3,6 +3,7 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 #include <Preferences.h>
+#include "driver/rtc_io.h"
 #include "../include/estacoes.h"
 
 // Configuração para OLED 1.3" (geralmente SH1106)
@@ -193,18 +194,21 @@ void goToSleep() {
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_ncenB08_tr);
   u8g2.drawStr(0, 10, "Entrando em Sleep...");
-  u8g2.drawStr(0, 30, "Acorde por B1/B2/B3");
+  u8g2.drawStr(0, 30, "Acorde por BTN1");
   u8g2.sendBuffer();
   delay(1000);
   u8g2.setPowerSave(1); // Desliga o display para economizar energia
 
-  // Configura despertar por múltiplos GPIOs (LOW level)
-  // Usa ext1_wakeup para 3 botões: GPIO12 (BTN1), GPIO14 (BTN2), GPIO13 (BTN3)
-  uint64_t mask = (1ULL << GPIO_NUM_12) | (1ULL << GPIO_NUM_14) | (1ULL << GPIO_NUM_13);
-  esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ALL_LOW);  // Acorda quando qualquer um estiver LOW
+  // Configura despertar por ext0 no BTN1 (GPIO12)
+  // NOTA: ESP32 clássico ext1 só suporta ALL_LOW ou ANY_HIGH.
+  //       ALL_LOW sem pull-up RTC causa despertar falso (pinos flutuam LOW).
+  //       Usa-se ext0 num único pino com pull-up RTC mantido durante deep sleep.
+  rtc_gpio_pullup_en(GPIO_NUM_12);      // Pull-up ativo durante deep sleep
+  rtc_gpio_pulldown_dis(GPIO_NUM_12);   // Desativa pull-down
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 0);  // 0 = acorda quando LOW (botão premido)
 
   Serial.println("Indo para Deep Sleep agora...");
-  Serial.println("Wake sources: BTN1 (GPIO12), BTN2 (GPIO14), BTN3 (GPIO13)");
+  Serial.println("Wake source: BTN1 (GPIO12) via ext0 com pull-up RTC");
   Serial.flush();
   esp_deep_sleep_start();
 }
