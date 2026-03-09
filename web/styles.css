@@ -198,8 +198,9 @@ body {
   position: absolute;
   left: 9%;
   right: 9%;
-  top: 9%;
-  height: 38%;
+  top: 5%;
+  height: 48%;
+  transition: opacity 0.5s;
   background: #3f526f;
   padding: 10px;
 }
@@ -253,7 +254,10 @@ body {
 .wifi span:nth-child(3) { height: 0.75em; }
 .wifi span:nth-child(4) { height: 1em; }
 
-.line { margin-top: 0.6em; line-height: 1.2; }
+.line { margin-top: 0.35em; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.line.small { font-size: 0.85em; opacity: 0.8; }
+
+.display-cover.sleeping .display-content { opacity: 0.15; }
 
 .buttons-row {
   position: absolute;
