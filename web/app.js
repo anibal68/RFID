@@ -749,8 +749,8 @@ rfidTouch.addEventListener("click", () => {
 manualInputEl.addEventListener("keydown", async (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
-    const code = manualInputEl.value.trim().toUpperCase();
-    if (code && /^[A-Z0-9]+$/.test(code)) {
+    const code = manualInputEl.value.trim().toLowerCase();
+    if (code && /^[a-z0-9]+$/.test(code)) {
       manualInputEl.value = "";
       await processRfidInput(code);
     }
