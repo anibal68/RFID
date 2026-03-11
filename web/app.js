@@ -368,7 +368,7 @@ function drawEditScreen() {
   if (state.editState === STATE_EDIT_VALUE && state.selectedField === 2) {
     line4El.textContent = state.opFeedbackMessage || "";
   } else {
-    line4El.textContent = state.lastRfidValue || "";
+    line4El.textContent = "";
   }
 }
 
