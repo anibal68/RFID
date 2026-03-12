@@ -1283,6 +1283,38 @@ void loop() {
           Serial.println(operadoresCount);
           Serial.println("[EDIT] Voltou ao modo normal");
         }
+      } else if (selectedField == 3) {
+        // Andon: comportamento depende do modo de display
+        if (andonDisplayMode == ANDON_DISPLAY_READING_OP) {
+          // Enter durante "....operador" → sai sem alterar varD
+          andonReadingInProgress = false;
+          andonDisplayMode = ANDON_DISPLAY_NORMAL;
+          editState = STATE_NORMAL;
+          Serial.println("[EDIT] Andon: saiu sem alterar (enter durante leitura)");
+        } else if (andonDisplayMode == ANDON_DISPLAY_SELECT_DEFECT) {
+          // Enter na lista de defeitos → seleciona defeito e guarda em varD
+          String selectedDefect = String(ANDON_DEFECTS[currentAndonDefectIndex]);
+          andonReadingInProgress = false;
+          andonDisplayMode = ANDON_DISPLAY_NORMAL;
+          editState = STATE_NORMAL;
+          
+          // Verifica se houve alteração
+          if (selectedDefect != varD) {
+            updateVariable('D', selectedDefect);
+            onAndonChanged(selectedDefect);
+            Serial.print("[EDIT] Andon: defeito selecionado: ");
+            Serial.println(selectedDefect);
+          } else {
+            Serial.println("[EDIT] Andon: mesmo valor, sem alteração");
+          }
+          Serial.println("[EDIT] Voltou ao modo normal");
+        } else {
+          // Qualquer outro estado → sai
+          andonReadingInProgress = false;
+          andonDisplayMode = ANDON_DISPLAY_NORMAL;
+          editState = STATE_NORMAL;
+          Serial.println("[EDIT] Andon: saiu sem alterar");
+        }
       }
     }
   }
@@ -1292,8 +1324,8 @@ void loop() {
     lastActivityTime = millis();  // Reset timer de sleep
     if (editState != STATE_NORMAL) {
       if (editState == STATE_SELECT_FIELD) {
-        // Roda entre Est, Ord, Op#
-        selectedField = (selectedField - 1 + 3) % 3;
+        // Roda entre Est, Ord, Op#, And
+        selectedField = (selectedField - 1 + 4) % 4;
         editModeStart = millis();  // Reset timeout
         lastStateChangeTime = millis();  // Feedback visual
         Serial.print("[EDIT] Campo: ");
@@ -1320,6 +1352,14 @@ void loop() {
           Serial.print("[EDIT] Op# modo: ");
           Serial.println(opMode == OP_MODE_IN ? "IN" : "OUT");
         }
+      } else if (editState == STATE_EDIT_VALUE && selectedField == 3) {
+        // Andon: navega lista de defeitos para trás
+        if (andonDisplayMode == ANDON_DISPLAY_SELECT_DEFECT) {
+          currentAndonDefectIndex = (currentAndonDefectIndex - 1 + NUM_ANDON_DEFECTS) % NUM_ANDON_DEFECTS;
+          editModeStart = millis();  // Reset timeout
+          Serial.print("[EDIT] Andon defeito anterior: ");
+          Serial.println(ANDON_DEFECTS[currentAndonDefectIndex]);
+        }
       }
     }
   }
@@ -1329,8 +1369,8 @@ void loop() {
     lastActivityTime = millis();  // Reset timer de sleep
     if (editState != STATE_NORMAL) {
       if (editState == STATE_SELECT_FIELD) {
-        // Roda entre Est, Ord, Op#
-        selectedField = (selectedField + 1) % 3;
+        // Roda entre Est, Ord, Op#, And
+        selectedField = (selectedField + 1) % 4;
         editModeStart = millis();  // Reset timeout
         lastStateChangeTime = millis();  // Feedback visual
         Serial.print("[EDIT] Campo: ");
@@ -1356,6 +1396,14 @@ void loop() {
           lastStateChangeTime = millis();  // Feedback visual
           Serial.print("[EDIT] Op# modo: ");
           Serial.println(opMode == OP_MODE_IN ? "IN" : "OUT");
+        }
+      } else if (editState == STATE_EDIT_VALUE && selectedField == 3) {
+        // Andon: navega lista de defeitos para frente
+        if (andonDisplayMode == ANDON_DISPLAY_SELECT_DEFECT) {
+          currentAndonDefectIndex = (currentAndonDefectIndex + 1) % NUM_ANDON_DEFECTS;
+          editModeStart = millis();  // Reset timeout
+          Serial.print("[EDIT] Andon próximo defeito: ");
+          Serial.println(ANDON_DEFECTS[currentAndonDefectIndex]);
         }
       }
     }
@@ -1614,6 +1662,70 @@ void loop() {
     // NÃO limpa feedback aqui - mantém visível até sair do ciclo
   }
 
+  // ===== LEITURA RFID PARA ANDON (OPERADOR) =====
+  if (andonReadingInProgress && selectedField == 3 && editState == STATE_EDIT_VALUE) {
+    if (andonDisplayMode == ANDON_DISPLAY_READING_OP && !andonLookupPending) {
+      String rfidRead = readRFIDCard();
+      
+      if (rfidRead.length() > 0) {
+        if (lastRFIDAndon != rfidRead) {
+          lastRFIDAndon = rfidRead;
+          andonLookupPending = true;
+          andonLookupStartTime = millis();
+          editModeStart = millis();  // Reset timeout
+          lastActivityTime = millis();
+          Serial.print("[RFID-ANDON] Cartão lido: ");
+          Serial.println(rfidRead);
+        }
+      }
+    }
+  }
+  
+  // ===== PROCESSAR LOOKUP DE ANDON OPERADOR APÓS DELAY =====
+  if (andonLookupPending && (millis() - andonLookupStartTime) > ANDON_LOOKUP_DELAY) {
+    andonLookupPending = false;
+    
+    Serial.print("[DB-ANDON] Procurando operador com rfid=");
+    Serial.println(lastRFIDAndon);
+    
+    String nomeOperador = supabaseGenericLookup("operadores", "rfid", lastRFIDAndon, "nome");
+    
+    if (nomeOperador != "Nao encontrado" && nomeOperador != "Erro: Offline") {
+      // Operador encontrado → passa para lista de defeitos
+      andonDisplayMode = ANDON_DISPLAY_SELECT_DEFECT;
+      currentAndonDefectIndex = 0;
+      editModeStart = millis();  // Reset timeout
+      
+      // Beep de sucesso
+      beep(1200, 100);
+      
+      Serial.print("[DB-ANDON] Operador encontrado: ");
+      Serial.println(nomeOperador);
+      Serial.println("[ANDON] Iniciando seleção de defeito");
+    } else {
+      // Operador não encontrado → mostra mensagem 1s
+      andonDisplayMode = ANDON_DISPLAY_OP_NOT_FOUND;
+      andonNotFoundTime = millis();
+      lastRFIDAndon = "";
+      
+      // Beep de erro
+      beep(400, 200);
+      
+      Serial.println("[DB-ANDON] Operador não encontrado na BD");
+    }
+  }
+  
+  // ===== CONTROLE DE EXIBIÇÃO "OP NAO ENCONTR" ANDON =====
+  if (andonDisplayMode == ANDON_DISPLAY_OP_NOT_FOUND && andonNotFoundTime != -1) {
+    if ((millis() - andonNotFoundTime) > ANDON_NOT_FOUND_DISPLAY_TIME) {
+      // Passou 1 segundo, volta a "....operador"
+      andonDisplayMode = ANDON_DISPLAY_READING_OP;
+      lastRFIDAndon = "";
+      andonNotFoundTime = -1;
+      Serial.println("[ANDON] Voltou a aguardar operador após 1 segundo");
+    }
+  }
+
   
   // Verifica timeout de edição (30 segundos)
   if (editState != STATE_NORMAL && (millis() - editModeStart) > EDIT_TIMEOUT) {
@@ -1622,6 +1734,11 @@ void loop() {
     ordReadOnceSuccess = false;  // Reset quando timeout
     lastRFIDSuccess = "";
     ordFromDatabase = "";
+    // Reset Andon state
+    andonReadingInProgress = false;
+    andonDisplayMode = ANDON_DISPLAY_NORMAL;
+    andonLookupPending = false;
+    lastRFIDAndon = "";
     // Mantém lastRfidValue com o último valor para feedback ao sair
     Serial.println("[EDIT] Saiu por timeout");
   }

@@ -219,7 +219,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.9em;
+  margin-bottom: 0.3em;
 }
 
 .battery {
@@ -254,7 +254,7 @@ body {
 .wifi span:nth-child(3) { height: 0.75em; }
 .wifi span:nth-child(4) { height: 1em; }
 
-.line { margin-top: 0.35em; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.line { margin-top: 0.15em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .line.small { font-size: 0.85em; opacity: 0.8; }
 
 .display-cover.sleeping .display-content { opacity: 0.15; }

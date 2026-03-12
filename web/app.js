@@ -24,6 +24,24 @@ const OP_DISPLAY_NOT_FOUND_OP = 6;
 const OP_MODE_IN = 0;
 const OP_MODE_OUT = 1;
 
+// Andon display modes
+const ANDON_DISPLAY_NORMAL = 0;
+const ANDON_DISPLAY_READING_OP = 1;
+const ANDON_DISPLAY_OP_NOT_FOUND = 2;
+const ANDON_DISPLAY_SELECT_DEFECT = 3;
+
+// Andon defect options
+const ANDON_DEFECTS = [
+  "Falta peca",
+  "Avaria Equip",
+  "Ajuste tec/qual",
+  "Defeito",
+  "Outros"
+];
+const NUM_ANDON_DEFECTS = ANDON_DEFECTS.length;
+const ANDON_NOT_FOUND_DISPLAY_TIME = 1000;  // 1 segundo
+const ANDON_LOOKUP_DELAY = 500;
+
 const NUM_ESTACOES = ESTACOES.length;
 const EDIT_TIMEOUT = 30000;
 const ORD_NOT_FOUND_DISPLAY_TIME = 2000;
@@ -76,6 +94,14 @@ const state = {
   opGreetingName: "",
   opFeedbackMessage: "",
 
+  // Andon
+  andonDisplayMode: ANDON_DISPLAY_NORMAL,
+  currentAndonDefectIndex: 0,
+  lastRFIDAndon: "",
+  andonReadingInProgress: false,
+  andonNotFoundTime: -1,
+  andonOldVarD: "",
+
   // Display
   battery: 85,
   rssi: -58,
@@ -90,6 +116,7 @@ const line1El = document.getElementById("line1");
 const line2El = document.getElementById("line2");
 const line3El = document.getElementById("line3");
 const line4El = document.getElementById("line4");
+const line5El = document.getElementById("line5");
 const batteryFillEl = document.getElementById("batteryFill");
 const wifiIconEl = document.getElementById("wifiIcon");
 const ledEl = document.getElementById("rfidLed");
@@ -107,8 +134,9 @@ function loadNVS() {
     state.varA = localStorage.getItem("rfid_varA") || "";
     state.varB = localStorage.getItem("rfid_varB") || "";
     state.varC = localStorage.getItem("rfid_varC") || "";
-    state.varD = localStorage.getItem("rfid_varD") || "";
+    state.varD = localStorage.getItem("rfid_varD") || "Verde";
     state.varE = localStorage.getItem("rfid_varE") || "";
+    state.andonOldVarD = state.varD;
     const ops = localStorage.getItem("rfid_operadores");
     state.operadores = ops ? JSON.parse(ops) : [];
     console.log("[NVS] Carregado:", { varA: state.varA, varB: state.varB, varC: state.varC, ops: state.operadores.length });
@@ -207,6 +235,12 @@ async function gravarTempoOperador(rfid, ordemFabrico, estado) {
   return await supabaseInsert("tempos", data);
 }
 
+// ===== ANDON: ROTINA CHAMADA QUANDO VARD MUDA =====
+function onAndonChanged(newValue) {
+  // Placeholder - implementar lógica futura aqui
+  console.log("[ANDON] VarD mudou para:", newValue);
+}
+
 // ===== BLINK HELPER =====
 function shouldBlink() {
   const normalBlink = Math.floor(Date.now() / 500) % 2 === 0;
@@ -265,6 +299,7 @@ function drawDisplay() {
     line2El.textContent = "   ZZZ...";
     line3El.textContent = "";
     line4El.textContent = "";
+    line5El.textContent = "";
     return;
   }
 
@@ -279,7 +314,8 @@ function drawMainScreen() {
   line1El.textContent = "Est: " + (state.varA || "---");
   line2El.textContent = "Ord: " + (state.varB || "---");
   line3El.textContent = "Op#: " + (state.varC || "---");
-  line4El.textContent = "";
+  line4El.textContent = "And: " + (state.varD || "---");
+  line5El.textContent = "";
 }
 
 function drawEditScreen() {
@@ -364,11 +400,32 @@ function drawEditScreen() {
     line3El.textContent = "Op#: " + (state.varC || "---");
   }
 
-  // ===== LINHA 4: FEEDBACK =====
-  if (state.editState === STATE_EDIT_VALUE && state.selectedField === 2) {
-    line4El.textContent = state.opFeedbackMessage || "";
+  // ===== LINHA 4: ANDON =====
+  if (state.editState === STATE_SELECT_FIELD) {
+    if (state.selectedField === 3) {
+      line4El.textContent = blink ? "And: " + (state.varD || "---") : "     " + (state.varD || "---");
+    } else {
+      line4El.textContent = "And: " + (state.varD || "---");
+    }
+  } else if (state.editState === STATE_EDIT_VALUE && state.selectedField === 3) {
+    if (state.andonDisplayMode === ANDON_DISPLAY_READING_OP) {
+      line4El.textContent = "And: " + (blink ? "....operador" : "");
+    } else if (state.andonDisplayMode === ANDON_DISPLAY_OP_NOT_FOUND) {
+      line4El.textContent = "And: op n encontr";
+    } else if (state.andonDisplayMode === ANDON_DISPLAY_SELECT_DEFECT) {
+      line4El.textContent = "And: " + (blink ? ANDON_DEFECTS[state.currentAndonDefectIndex] : "");
+    } else {
+      line4El.textContent = "And: " + (state.varD || "---");
+    }
   } else {
-    line4El.textContent = "";
+    line4El.textContent = "And: " + (state.varD || "---");
+  }
+
+  // ===== LINHA 5: FEEDBACK =====
+  if (state.editState === STATE_EDIT_VALUE && state.selectedField === 2) {
+    line5El.textContent = state.opFeedbackMessage || "";
+  } else {
+    line5El.textContent = "";
   }
 }
 
@@ -437,6 +494,19 @@ function handleBtnSel() {
       state.editModeStart = Date.now();
       state.lastStateChangeTime = Date.now();
       console.log("[EDIT] Entrou em modo Op# - Selecionando In/Out");
+
+    } else if (state.selectedField === 3) {
+      // Andon: inicia leitura RFID de operador
+      state.editState = STATE_EDIT_VALUE;
+      state.andonDisplayMode = ANDON_DISPLAY_READING_OP;
+      state.andonReadingInProgress = true;
+      state.lastRFIDAndon = "";
+      state.currentAndonDefectIndex = 0;
+      state.editModeStart = Date.now();
+      state.lastStateChangeTime = Date.now();
+      manualInputEl.focus();
+      manualInputEl.placeholder = "RFID operador (andon)...";
+      console.log("[EDIT] Entrou em modo Andon - Aguardando RFID operador");
     }
 
   } else if (state.editState === STATE_EDIT_VALUE) {
@@ -453,6 +523,9 @@ function handleBtnSel() {
 
     } else if (state.selectedField === 2) {
       handleOpConfirm();
+
+    } else if (state.selectedField === 3) {
+      handleAndonConfirm();
     }
   }
 }
@@ -528,13 +601,47 @@ async function handleOpConfirm() {
   }
 }
 
+// ===== ANDON CONFIRM =====
+function handleAndonConfirm() {
+  if (state.andonDisplayMode === ANDON_DISPLAY_READING_OP) {
+    // Enter durante "....operador" → sai sem alterar varD
+    state.andonReadingInProgress = false;
+    state.andonDisplayMode = ANDON_DISPLAY_NORMAL;
+    state.editState = STATE_NORMAL;
+    manualInputEl.placeholder = "";
+    console.log("[EDIT] Andon: saiu sem alterar (enter durante leitura)");
+  } else if (state.andonDisplayMode === ANDON_DISPLAY_SELECT_DEFECT) {
+    // Enter na lista de defeitos → seleciona defeito e guarda em varD
+    const selectedDefect = ANDON_DEFECTS[state.currentAndonDefectIndex];
+    state.andonReadingInProgress = false;
+    state.andonDisplayMode = ANDON_DISPLAY_NORMAL;
+    state.editState = STATE_NORMAL;
+    manualInputEl.placeholder = "";
+    
+    if (selectedDefect !== state.varD) {
+      updateVariable("D", selectedDefect);
+      onAndonChanged(selectedDefect);
+      console.log("[EDIT] Andon: defeito selecionado:", selectedDefect);
+    } else {
+      console.log("[EDIT] Andon: mesmo valor, sem alteração");
+    }
+  } else {
+    // Qualquer outro estado → sai
+    state.andonReadingInProgress = false;
+    state.andonDisplayMode = ANDON_DISPLAY_NORMAL;
+    state.editState = STATE_NORMAL;
+    manualInputEl.placeholder = "";
+    console.log("[EDIT] Andon: saiu sem alterar");
+  }
+}
+
 // ===== BOTÃO UP (BTN1) =====
 function handleBtnUp() {
   if (state.isSleeping) { wakeUp(); return; }
   state.lastActivityTime = Date.now();
 
   if (state.editState === STATE_SELECT_FIELD) {
-    state.selectedField = (state.selectedField - 1 + 3) % 3;
+    state.selectedField = (state.selectedField - 1 + 4) % 4;
     state.editModeStart = Date.now();
     state.lastStateChangeTime = Date.now();
   } else if (state.editState === STATE_EDIT_VALUE && state.selectedField === 0) {
@@ -552,6 +659,12 @@ function handleBtnUp() {
       state.opMode = state.opMode === OP_MODE_IN ? OP_MODE_OUT : OP_MODE_IN;
       state.lastStateChangeTime = Date.now();
     }
+  } else if (state.editState === STATE_EDIT_VALUE && state.selectedField === 3) {
+    // Andon: navega lista de defeitos para trás
+    if (state.andonDisplayMode === ANDON_DISPLAY_SELECT_DEFECT) {
+      state.currentAndonDefectIndex = (state.currentAndonDefectIndex - 1 + NUM_ANDON_DEFECTS) % NUM_ANDON_DEFECTS;
+      state.editModeStart = Date.now();
+    }
   }
 }
 
@@ -561,7 +674,7 @@ function handleBtnDown() {
   state.lastActivityTime = Date.now();
 
   if (state.editState === STATE_SELECT_FIELD) {
-    state.selectedField = (state.selectedField + 1) % 3;
+    state.selectedField = (state.selectedField + 1) % 4;
     state.editModeStart = Date.now();
     state.lastStateChangeTime = Date.now();
   } else if (state.editState === STATE_EDIT_VALUE && state.selectedField === 0) {
@@ -578,6 +691,12 @@ function handleBtnDown() {
     if (state.opDisplayMode === OP_DISPLAY_MODE_SELECT) {
       state.opMode = state.opMode === OP_MODE_IN ? OP_MODE_OUT : OP_MODE_IN;
       state.lastStateChangeTime = Date.now();
+    }
+  } else if (state.editState === STATE_EDIT_VALUE && state.selectedField === 3) {
+    // Andon: navega lista de defeitos para frente
+    if (state.andonDisplayMode === ANDON_DISPLAY_SELECT_DEFECT) {
+      state.currentAndonDefectIndex = (state.currentAndonDefectIndex + 1) % NUM_ANDON_DEFECTS;
+      state.editModeStart = Date.now();
     }
   }
 }
@@ -683,6 +802,39 @@ async function processRfidInput(code) {
     }
     return;
   }
+
+  // Modo ANDON: leitura de operador para Andon
+  if (state.andonReadingInProgress && state.selectedField === 3 && state.editState === STATE_EDIT_VALUE) {
+    if (state.andonDisplayMode === ANDON_DISPLAY_READING_OP) {
+      if (state.lastRFIDAndon !== code) {
+        state.lastRFIDAndon = code;
+        state.editModeStart = Date.now();
+        console.log("[RFID-ANDON] Cartão lido:", code);
+
+        setTimeout(async () => {
+          const nomeOperador = await supabaseLookup("operadores", "rfid", code, "nome");
+
+          if (nomeOperador !== "Nao encontrado" && nomeOperador !== "Erro: Offline") {
+            // Operador encontrado → passa para lista de defeitos
+            state.andonDisplayMode = ANDON_DISPLAY_SELECT_DEFECT;
+            state.currentAndonDefectIndex = 0;
+            state.editModeStart = Date.now();
+            beep(1200, 100);
+            console.log("[DB-ANDON] Operador encontrado:", nomeOperador);
+            console.log("[ANDON] Iniciando seleção de defeito");
+          } else {
+            // Operador não encontrado → mostra mensagem 1s
+            state.andonDisplayMode = ANDON_DISPLAY_OP_NOT_FOUND;
+            state.andonNotFoundTime = Date.now();
+            state.lastRFIDAndon = "";
+            beep(400, 200);
+            console.log("[DB-ANDON] Operador não encontrado na BD");
+          }
+        }, ANDON_LOOKUP_DELAY);
+      }
+    }
+    return;
+  }
 }
 
 // ===== LOOP PRINCIPAL =====
@@ -698,6 +850,10 @@ function mainLoop() {
     state.lastRFIDSuccess = "";
     state.ordFromDatabase = "";
     state.opFeedbackMessage = "";
+    // Reset Andon state
+    state.andonReadingInProgress = false;
+    state.andonDisplayMode = ANDON_DISPLAY_NORMAL;
+    state.lastRFIDAndon = "";
     manualInputEl.placeholder = "";
     console.log("[EDIT] Saiu por timeout");
   }
@@ -710,6 +866,16 @@ function mainLoop() {
       state.lastRFIDSuccess = "";
       state.ordReadOnceSuccess = false;
       state.ordNotFoundTime = -1;
+      manualInputEl.focus();
+    }
+  }
+
+  // Controle "op nao encontr" Andon (1 segundo)
+  if (state.andonDisplayMode === ANDON_DISPLAY_OP_NOT_FOUND && state.andonNotFoundTime !== -1) {
+    if ((now - state.andonNotFoundTime) > ANDON_NOT_FOUND_DISPLAY_TIME) {
+      state.andonDisplayMode = ANDON_DISPLAY_READING_OP;
+      state.lastRFIDAndon = "";
+      state.andonNotFoundTime = -1;
       manualInputEl.focus();
     }
   }
