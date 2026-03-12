@@ -32,6 +32,9 @@ const char* ssid = "Vodafone-428F66 2,4G";
 const char* password = "yQQA3Af3GY";
 
 // Supabase Credentials - PLACEHOLDERS
+// do Moura
+// https://efenntgldjizgyyttiiw.supabase.co
+// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmZW5udGdsZGppemd5eXR0aWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2NzI5ODIsImV4cCI6MjA4NzI0ODk4Mn0.1KPq3FBSo5Nn3qNQoHMEMvPBKBa1SYeI72QaUZMXSMc
 const char *supabase_url = "https://zxjwkvepgqfgkajhuyaf.supabase.co";
 const char *supabase_key =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS"
@@ -44,7 +47,7 @@ const char *supabase_key =
 int lastPressed = -1;
 
 long lastActivityTime = 0;
-const long sleepTimeout = 30000; // 30 segundos de inatividade (debug)
+const long sleepTimeout = 180000; // 3 minutos de inatividade (debug)
 long lastNfcPollTime = 0;        // Para evitar lag no loop
 
 // ===== PERSISTÊNCIA DE DADOS (NVS) =====
@@ -157,20 +160,49 @@ enum OpDisplayMode {
 OpDisplayMode opDisplayMode = OP_DISPLAY_NORMAL;
 bool opReadingInProgress = false;
 
-// Controle de exibição - mensagens persistentes na linha 4
+// Controle de exibição - mensagens persistentes na linha 5 (feedback)
 String opGreetingName = "";  // Nome a mostrar no feedback
-String opFeedbackMessage = "";  // Mensagem persistente da linha 4
+String opFeedbackMessage = "";  // Mensagem persistente da linha 5
 
 // Variáveis para controlar delay da lookup
 bool opLookupPending = false;
 long opLookupStartTime = -1;
 const long OP_LOOKUP_DELAY = 500;  // 500ms antes de fazer a lookup
 
-// ===== POSIÇÕES DE DISPLAY (Y) =====
-const int DISPLAY_LINE1_Y = 20;  // Linha 1: Est:
-const int DISPLAY_LINE2_Y = 35;  // Linha 2: Ord:
-const int DISPLAY_LINE3_Y = 50;  // Linha 3: Op#:
-const int DISPLAY_LINE4_Y = 63;  // Linha 4: Feedback/Debug
+// ===== ANDON (campo 3 - linha 4) =====
+enum AndonDisplayMode {
+  ANDON_DISPLAY_NORMAL = 0,        // Mostra valor fixo (varD)
+  ANDON_DISPLAY_READING_OP = 1,    // Mostra "....operador" a piscar
+  ANDON_DISPLAY_OP_NOT_FOUND = 2,  // Mostra "op nao encontr" (1s)
+  ANDON_DISPLAY_SELECT_DEFECT = 3  // Navega lista de defeitos a piscar
+};
+AndonDisplayMode andonDisplayMode = ANDON_DISPLAY_NORMAL;
+int currentAndonDefectIndex = 0;
+String lastRFIDAndon = "";
+bool andonReadingInProgress = false;
+bool andonLookupPending = false;
+long andonLookupStartTime = -1;
+long andonNotFoundTime = -1;
+const long ANDON_NOT_FOUND_DISPLAY_TIME = 1000;  // 1 segundo
+const long ANDON_LOOKUP_DELAY = 500;
+String andonOldVarD = "";  // Para detetar mudança de varD
+
+// Lista de defeitos Andon (abreviados para OLED)
+const char* ANDON_DEFECTS[] = {
+  "Falta peca",
+  "Avaria Equip",
+  "Ajuste tec/qual",
+  "Defeito",
+  "Outros"
+};
+const int NUM_ANDON_DEFECTS = 5;
+
+// ===== POSIÇÕES DE DISPLAY (Y) - 5 linhas =====
+const int DISPLAY_LINE1_Y = 17;  // Linha 1: Est:
+const int DISPLAY_LINE2_Y = 28;  // Linha 2: Ord:
+const int DISPLAY_LINE3_Y = 39;  // Linha 3: Op#:
+const int DISPLAY_LINE4_Y = 50;  // Linha 4: And: (Andon)
+const int DISPLAY_LINE5_Y = 61;  // Linha 5: Feedback/Debug
 const int DISPLAY_VALUE_X = 30;  // Posição X dos valores
 
 // ===== FORWARD DECLARATIONS =====
@@ -233,8 +265,9 @@ void initNVS() {
   varA = preferences.getString("varA", "");
   varB = preferences.getString("varB", "");
   varC = preferences.getString("varC", "");
-  varD = preferences.getString("varD", "");
+  varD = preferences.getString("varD", "Verde");
   varE = preferences.getString("varE", "");
+  andonOldVarD = varD;  // Inicializa referência para detetar mudanças
   
   Serial.println("[NVS] Variáveis carregadas:");
   Serial.print("  A: "); Serial.println(varA);
@@ -245,6 +278,13 @@ void initNVS() {
   
   // Carrega lista de operadores
   loadOperadoresNVS();
+}
+
+// ===== ANDON: ROTINA CHAMADA QUANDO VARD MUDA =====
+void onAndonChanged(String newValue) {
+  // Placeholder - implementar lógica futura aqui
+  Serial.print("[ANDON] VarD mudou para: ");
+  Serial.println(newValue);
 }
 
 // ===== FUNÇÕES DE PERSISTÊNCIA DE OPERADORES =====
@@ -529,42 +569,63 @@ void drawEditScreen() {
     u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, varC == "" ? "---" : varC.c_str());
   }
   
-  // ===== LINHA 4: FEEDBACK =====
+  // ===== LINHA 4: ANDON =====
+  if (editState == STATE_SELECT_FIELD) {
+    // Modo seleção: pisca o rótulo se selecionado
+    if (selectedField == 3 && blink) {
+      u8g2.drawStr(0, DISPLAY_LINE4_Y, "And:");  // Pisca
+    } else if (selectedField != 3) {
+      u8g2.drawStr(0, DISPLAY_LINE4_Y, "And:");  // Sempre visível se não selecionado
+    }
+    // Mostra o valor guardado (sempre visível)
+    u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE4_Y, varD == "" ? "---" : varD.c_str());
+  } else if (editState == STATE_EDIT_VALUE && selectedField == 3) {
+    // Modo edição de Andon
+    u8g2.drawStr(0, DISPLAY_LINE4_Y, "And:");  // Rótulo sempre visível
+    
+    if (andonDisplayMode == ANDON_DISPLAY_READING_OP) {
+      // Mostra "....operador" a piscar
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE4_Y, blink ? "....operador" : "");
+    } else if (andonDisplayMode == ANDON_DISPLAY_OP_NOT_FOUND) {
+      // Mostra "op nao encontr" fixo
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE4_Y, "op n encontr");
+    } else if (andonDisplayMode == ANDON_DISPLAY_SELECT_DEFECT) {
+      // Mostra defeito atual a piscar
+      if (blink) {
+        u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE4_Y, ANDON_DEFECTS[currentAndonDefectIndex]);
+      }
+    } else {
+      // ANDON_DISPLAY_NORMAL
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE4_Y, varD == "" ? "---" : varD.c_str());
+    }
+  } else {
+    // Estado normal ou outro estado
+    u8g2.drawStr(0, DISPLAY_LINE4_Y, "And:");
+    u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE4_Y, varD == "" ? "---" : varD.c_str());
+  }
+  
+  // ===== LINHA 5: FEEDBACK =====
   if (editState == STATE_EDIT_VALUE && selectedField == 2) {
     String displayFeedback = "";
     
     switch (opDisplayMode) {
       case OP_DISPLAY_MODE_SELECT:
-        // Nada a mostrar aqui quando selecionando In/Out
         break;
       case OP_DISPLAY_IN_READING:
-        // Durante leitura IN: mostra "... à espera"
-        displayFeedback = opFeedbackMessage;
-        break;
       case OP_DISPLAY_IN_SUCCESS:
-        // Sucesso IN: mostra mensagem persistente
-        displayFeedback = opFeedbackMessage;
-        break;
       case OP_DISPLAY_OUT_READING:
-        // Durante leitura OUT: mostra "... à espera"
-        displayFeedback = opFeedbackMessage;
-        break;
       case OP_DISPLAY_OUT_SUCCESS:
-        // Sucesso OUT: mostra mensagem persistente
-        displayFeedback = opFeedbackMessage;
-        break;
       case OP_DISPLAY_NOT_FOUND:
-        // Erro: mostra mensagem persistente
         displayFeedback = opFeedbackMessage;
         break;
       default:
         break;
     }
     
-    u8g2.drawStr(0, DISPLAY_LINE4_Y, displayFeedback.c_str());
+    u8g2.drawStr(0, DISPLAY_LINE5_Y, displayFeedback.c_str());
   } else {
-    // Se não está em edição de Op#, mostra lastRfidValue (para debug)
-    u8g2.drawStr(0, DISPLAY_LINE4_Y, lastRfidValue.c_str());
+    // Linha 5 vazia quando não está em edição de Op#
+    u8g2.drawStr(0, DISPLAY_LINE5_Y, "");
   }
   
   u8g2.sendBuffer();
@@ -589,6 +650,10 @@ void drawMainScreen() {
   // Linha 3: Número de Operadores
   u8g2.drawStr(0, DISPLAY_LINE3_Y, "Op#:");
   u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE3_Y, varC == "" ? "---" : varC.c_str());
+  
+  // Linha 4: Andon
+  u8g2.drawStr(0, DISPLAY_LINE4_Y, "And:");
+  u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE4_Y, varD == "" ? "---" : varD.c_str());
   
   u8g2.sendBuffer();
 }
@@ -1096,6 +1161,16 @@ void loop() {
         editModeStart = millis();
         lastStateChangeTime = millis();
         Serial.println("[EDIT] Entrou em modo Op# - Selecionando In/Out");
+      } else if (selectedField == 3) {
+        // Andon: inicia leitura RFID de operador
+        editState = STATE_EDIT_VALUE;
+        andonDisplayMode = ANDON_DISPLAY_READING_OP;
+        andonReadingInProgress = true;
+        lastRFIDAndon = "";
+        currentAndonDefectIndex = 0;
+        editModeStart = millis();
+        lastStateChangeTime = millis();
+        Serial.println("[EDIT] Entrou em modo Andon - Aguardando RFID operador");
       }
     } else if (editState == STATE_EDIT_VALUE) {
       // Confirmação do valor
