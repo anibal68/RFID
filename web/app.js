@@ -484,7 +484,7 @@ function handleBtnSel() {
       state.editModeStart = Date.now();
       state.lastStateChangeTime = Date.now();
       manualInputEl.focus();
-      manualInputEl.placeholder = "RFID da ordem...";
+      manualInputEl.placeholder = "RFID / cód. barras da ordem...";
       console.log("[EDIT] Entrou em modo edição de Ordem");
 
     } else if (state.selectedField === 2) {
@@ -505,7 +505,7 @@ function handleBtnSel() {
       state.editModeStart = Date.now();
       state.lastStateChangeTime = Date.now();
       manualInputEl.focus();
-      manualInputEl.placeholder = "RFID operador (andon)...";
+      manualInputEl.placeholder = "RFID / cód. barras operador...";
       console.log("[EDIT] Entrou em modo Andon - Aguardando RFID operador");
     }
 
@@ -588,7 +588,7 @@ async function handleOpConfirm() {
     state.operadorFromDatabase = "";
     state.editModeStart = Date.now();
     manualInputEl.focus();
-    manualInputEl.placeholder = "RFID operador...";
+    manualInputEl.placeholder = "RFID / cód. barras operador...";
   } else {
     state.opReadingInProgress = false;
     state.opGreetingName = "";
@@ -916,7 +916,7 @@ manualInputEl.addEventListener("keydown", async (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     const code = manualInputEl.value.trim().toLowerCase();
-    if (code && /^[a-z0-9]+$/.test(code)) {
+    if (code && /^[a-z0-9\-_.]+$/.test(code)) {
       manualInputEl.value = "";
       await processRfidInput(code);
     }

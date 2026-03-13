@@ -19,9 +19,22 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 #define BAT_PIN 34     // Battery ADC (GPIO34 - ADC1, sem conflito com WiFi)
 #define SPEAKER_PIN 25 // Speaker PWM (GPIO25)
 
+// Barcode Reader (Serial2 / UART)
+#define BARCODE_RX 18  // GPIO18 - RX do leitor de barras
+#define BARCODE_TX 19  // GPIO19 - TX do leitor de barras (opcional)
+#define BARCODE_BAUD 9600  // Baud rate do leitor (ajustar conforme modelo)
+
 // Instância do PN532 via I2C (usando pinos dummy para IRQ e Reset para evitar
 // conflito com SDA/SCL)
 Adafruit_PN532 nfc(3, 2);
+
+// Leitor de código de barras via Serial2 (UART)
+HardwareSerial barcodeSerial(2);
+#define BARCODE_BUFFER_SIZE 64
+char barcodeBuffer[BARCODE_BUFFER_SIZE];
+int barcodeBufferIndex = 0;
+long lastBarcodeCharTime = 0;
+const long BARCODE_CHAR_TIMEOUT = 100; // 100ms timeout entre caracteres
 
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -1052,6 +1065,61 @@ String readRFIDCard() {
   return "";  // Nada lido
 }
 
+// ===== LEITURA DE CÓDIGO DE BARRAS (Serial2 / UART) =====
+// Lê dados do leitor de barras de forma não-bloqueante
+String readBarcodeSerial() {
+  while (barcodeSerial.available()) {
+    char c = barcodeSerial.read();
+    lastBarcodeCharTime = millis();
+    
+    if (c == '\n' || c == '\r') {
+      // Caractere terminador - processa o buffer
+      if (barcodeBufferIndex > 0) {
+        barcodeBuffer[barcodeBufferIndex] = '\0';
+        String result = String(barcodeBuffer);
+        result.trim();
+        result.toLowerCase();
+        barcodeBufferIndex = 0;
+        if (result.length() > 0) {
+          Serial.print("[BARCODE] Código lido: ");
+          Serial.println(result);
+          return result;
+        }
+      }
+    } else if (barcodeBufferIndex < BARCODE_BUFFER_SIZE - 1) {
+      barcodeBuffer[barcodeBufferIndex++] = c;
+    }
+  }
+  
+  // Timeout: se temos dados no buffer mas não veio terminador
+  if (barcodeBufferIndex > 0 && (millis() - lastBarcodeCharTime) > BARCODE_CHAR_TIMEOUT) {
+    barcodeBuffer[barcodeBufferIndex] = '\0';
+    String result = String(barcodeBuffer);
+    result.trim();
+    result.toLowerCase();
+    barcodeBufferIndex = 0;
+    if (result.length() > 0) {
+      Serial.print("[BARCODE] Código lido (timeout): ");
+      Serial.println(result);
+      return result;
+    }
+  }
+  
+  return "";
+}
+
+// ===== LEITURA UNIFICADA: RFID + CÓDIGO DE BARRAS =====
+// Tenta RFID primeiro, depois código de barras
+String readIdentifier() {
+  String rfid = readRFIDCard();
+  if (rfid.length() > 0) return rfid;
+  
+  String barcode = readBarcodeSerial();
+  if (barcode.length() > 0) return barcode;
+  
+  return "";
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
@@ -1082,6 +1150,13 @@ void setup() {
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (versiondata)
     nfc.SAMConfig();
+
+  // Inicializa leitor de código de barras (Serial2)
+  barcodeSerial.begin(BARCODE_BAUD, SERIAL_8N1, BARCODE_RX, BARCODE_TX);
+  Serial.println("[BARCODE] Leitor de barras inicializado (Serial2)");
+  Serial.print("  RX: GPIO"); Serial.print(BARCODE_RX);
+  Serial.print(", TX: GPIO"); Serial.print(BARCODE_TX);
+  Serial.print(", Baud: "); Serial.println(BARCODE_BAUD);
 
   lastActivityTime = millis();
 
@@ -1409,11 +1484,11 @@ void loop() {
     }
   }
 
-  // ===== LEITURA RFID CONTÍNUA PARA CAMPO ORD =====
+  // ===== LEITURA RFID/BARCODE CONTÍNUA PARA CAMPO ORD =====
   if (rfidReadingInProgress && selectedField == 1 && editState == STATE_EDIT_VALUE) {
-    // Tenta ler um cartão RFID de forma contínua, mas só processa uma leitura bem-sucedida
+    // Tenta ler um cartão RFID ou código de barras, mas só processa uma leitura bem-sucedida
     if (!ordReadOnceSuccess) {  // Só lê se ainda não teve sucesso neste ciclo
-      String rfidRead = readRFIDCard();
+      String rfidRead = readIdentifier();
       
       if (rfidRead.length() > 0) {
         // Cartão lido com sucesso - guarda e processa
@@ -1482,12 +1557,12 @@ void loop() {
     }
   }
 
-  // ===== LEITURA RFID PARA OP# (IN E OUT) =====
+  // ===== LEITURA RFID/BARCODE PARA OP# (IN E OUT) =====
   if (opReadingInProgress && selectedField == 2 && editState == STATE_EDIT_VALUE) {
-    // Só lê novo cartão se não há lookup pendente
+    // Só lê novo cartão/código se não há lookup pendente
     if (!opLookupPending) {
-      // Tenta ler um cartão RFID
-      String rfidRead = readRFIDCard();
+      // Tenta ler um cartão RFID ou código de barras
+      String rfidRead = readIdentifier();
       
       if (rfidRead.length() > 0) {
         // Cartão lido com sucesso
@@ -1662,10 +1737,10 @@ void loop() {
     // NÃO limpa feedback aqui - mantém visível até sair do ciclo
   }
 
-  // ===== LEITURA RFID PARA ANDON (OPERADOR) =====
+  // ===== LEITURA RFID/BARCODE PARA ANDON (OPERADOR) =====
   if (andonReadingInProgress && selectedField == 3 && editState == STATE_EDIT_VALUE) {
     if (andonDisplayMode == ANDON_DISPLAY_READING_OP && !andonLookupPending) {
-      String rfidRead = readRFIDCard();
+      String rfidRead = readIdentifier();
       
       if (rfidRead.length() > 0) {
         if (lastRFIDAndon != rfidRead) {
