@@ -5,47 +5,31 @@
 #include <Preferences.h>
 #include "driver/rtc_io.h"
 #include "../include/estacoes.h"
-#if CONFIG_IDF_TARGET_ESP32S3
-#include "../include/usb_barcode.h"
-#endif
 
 // Configuração para OLED 1.3" (geralmente SH1106)
 // Se o seu display for SSD1306, mude SH1106 para SSD1306
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 
-// ===== Pin Configuration (ESP32 vs ESP32-S3) =====
+// ESP32 Pin Configuration
 #define SDA_PIN 16    // I2C SDA (GPIO16)
 #define SCL_PIN 17    // I2C SCL (GPIO17)
 #define BTN1 12       // Button 1 (GPIO12) - Wakeup button
 #define BTN2 14       // Button 2 (GPIO14)
 #define BTN3 13       // Button 3 (GPIO13)
+#define BAT_PIN 34     // Battery ADC (GPIO34 - ADC1, sem conflito com WiFi)
+#define SPEAKER_PIN 25 // Speaker PWM (GPIO25)
 
-#if CONFIG_IDF_TARGET_ESP32S3
-  #define BAT_PIN 4      // Battery ADC (GPIO4 - ADC1_CH3 no S3)
-  #define SPEAKER_PIN 21 // Speaker PWM (GPIO21 - GPIO25 não existe no S3)
-  // USB Host usa GPIO19/20 para leitor de barras USB
-  // UART barcode (fallback) em pinos diferentes do USB
-  #define BARCODE_RX 9   // GPIO9 - RX do leitor de barras (UART)
-  #define BARCODE_TX 10  // GPIO10 - TX do leitor de barras (UART)
-#else
-  #define BAT_PIN 34     // Battery ADC (GPIO34 - ADC1, sem conflito com WiFi)
-  #define SPEAKER_PIN 25 // Speaker PWM (GPIO25)
-  // Barcode Reader (Serial / UART)
-  #define BARCODE_RX 18  // GPIO18 - RX do leitor de barras
-  #define BARCODE_TX 19  // GPIO19 - TX do leitor de barras (opcional)
-#endif
+// Barcode Reader (Serial2 / UART)
+#define BARCODE_RX 18  // GPIO18 - RX do leitor de barras
+#define BARCODE_TX 19  // GPIO19 - TX do leitor de barras (opcional)
 #define BARCODE_BAUD 9600  // Baud rate do leitor (ajustar conforme modelo)
 
 // Instância do PN532 via I2C (usando pinos dummy para IRQ e Reset para evitar
 // conflito com SDA/SCL)
 Adafruit_PN532 nfc(3, 2);
 
-// Leitor de código de barras via UART
-#if CONFIG_IDF_TARGET_ESP32S3
-HardwareSerial barcodeSerial(1);  // S3: apenas UART0 e UART1
-#else
-HardwareSerial barcodeSerial(2);  // ESP32 clássico: UART0, UART1, UART2
-#endif
+// Leitor de código de barras via Serial2 (UART)
+HardwareSerial barcodeSerial(2);
 #define BARCODE_BUFFER_SIZE 64
 char barcodeBuffer[BARCODE_BUFFER_SIZE];
 int barcodeBufferIndex = 0;
@@ -260,20 +244,13 @@ void goToSleep() {
   delay(1000);
   u8g2.setPowerSave(1); // Desliga o display para economizar energia
 
-  // Configura despertar por GPIO12 (BTN1)
+  // Configura despertar por ext0 no BTN1 (GPIO12)
   rtc_gpio_pullup_en(GPIO_NUM_12);      // Pull-up ativo durante deep sleep
   rtc_gpio_pulldown_dis(GPIO_NUM_12);   // Desativa pull-down
-#if CONFIG_IDF_TARGET_ESP32S3
-  // ESP32-S3: não suporta ext0, usa ext1 com bitmask
-  esp_sleep_enable_ext1_wakeup(1ULL << GPIO_NUM_12, ESP_EXT1_WAKEUP_ALL_LOW);
-  Serial.println("Indo para Deep Sleep agora...");
-  Serial.println("Wake source: BTN1 (GPIO12) via ext1 com pull-up RTC");
-#else
-  // ESP32 clássico: usa ext0 num único pino
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 0);  // 0 = acorda quando LOW
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 0);  // 0 = acorda quando LOW (botão premido)
+
   Serial.println("Indo para Deep Sleep agora...");
   Serial.println("Wake source: BTN1 (GPIO12) via ext0 com pull-up RTC");
-#endif
   Serial.flush();
   esp_deep_sleep_start();
 }
@@ -1128,16 +1105,11 @@ String readBarcodeSerial() {
   return "";
 }
 
-// ===== LEITURA UNIFICADA: RFID + CÓDIGO DE BARRAS (USB + UART) =====
-// Tenta RFID primeiro, depois USB barcode (S3), depois UART barcode
+// ===== LEITURA UNIFICADA: RFID + CÓDIGO DE BARRAS =====
+// Tenta RFID primeiro, depois código de barras
 String readIdentifier() {
   String rfid = readRFIDCard();
   if (rfid.length() > 0) return rfid;
-
-#if CONFIG_IDF_TARGET_ESP32S3
-  String usbBarcode = usbBarcodeRead();
-  if (usbBarcode.length() > 0) return usbBarcode;
-#endif
 
   String barcode = readBarcodeSerial();
   if (barcode.length() > 0) return barcode;
@@ -1176,17 +1148,12 @@ void setup() {
   if (versiondata)
     nfc.SAMConfig();
 
-  // Inicializa leitor de código de barras UART (fallback)
+  // Inicializa leitor de código de barras (Serial2)
   barcodeSerial.begin(BARCODE_BAUD, SERIAL_8N1, BARCODE_RX, BARCODE_TX);
-  Serial.println("[BARCODE] Leitor UART inicializado");
+  Serial.println("[BARCODE] Leitor de barras inicializado (Serial2)");
   Serial.print("  RX: GPIO"); Serial.print(BARCODE_RX);
   Serial.print(", TX: GPIO"); Serial.print(BARCODE_TX);
   Serial.print(", Baud: "); Serial.println(BARCODE_BAUD);
-
-#if CONFIG_IDF_TARGET_ESP32S3
-  // Inicializa USB Host para leitor de barras USB (ESP32-S3)
-  usbBarcodeInit();
-#endif
 
   lastActivityTime = millis();
 
