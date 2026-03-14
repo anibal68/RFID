@@ -1607,7 +1607,7 @@ void loop() {
           addOperador(lastRFIDOperador);
           
           // Grava apenas este operador na Supabase tempos
-          gravarTempoOperador(lastRFIDOperador, varB, "in");
+          gravarTempoOperador(lastRFIDOperador, "", "in");
           
           // Atualiza varC com novo contador
           updateVariable('C', String(operadoresCount));
@@ -1681,7 +1681,7 @@ void loop() {
           JsonDocument doc;
           doc["rfid"] = lastRFIDOperador;  // RFID do operador
           doc["tempo"] = tempoAtual;
-          doc["ordem_fabrico"] = varB;  // ordem_fabrico
+          doc["ordem_fabrico"] = "";  // Em branco no registo de operador
           doc["estacao"] = estacaoID;  // ID da estação
           doc["estado"] = "out";  // Marca como saída
           

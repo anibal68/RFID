@@ -761,7 +761,7 @@ async function processRfidInput(code) {
             const exists = operadorExists(code);
             if (!exists) {
               addOperador(code);
-              await gravarTempoOperador(code, state.varB, "in");
+              await gravarTempoOperador(code, "", "in");
               updateVariable("C", String(state.operadores.length));
             }
             state.opDisplayMode = OP_DISPLAY_IN_SUCCESS;
@@ -778,7 +778,7 @@ async function processRfidInput(code) {
           const exists = operadorExists(code);
           if (exists) {
             removeOperador(code);
-            await gravarTempoOperador(code, state.varB, "out");
+            await gravarTempoOperador(code, "", "out");
             updateVariable("C", String(state.operadores.length));
             state.opDisplayMode = OP_DISPLAY_OUT_SUCCESS;
             state.opFeedbackMessage = "removido";
