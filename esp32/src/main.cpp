@@ -44,16 +44,13 @@ const long BARCODE_CHAR_TIMEOUT = 100; // 100ms timeout entre caracteres
 const char* ssid = "Vodafone-428F66 2,4G";
 const char* password = "yQQA3Af3GY";
 
-// Supabase Credentials - PLACEHOLDERS
-// do Moura
-// https://efenntgldjizgyyttiiw.supabase.co
-// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmZW5udGdsZGppemd5eXR0aWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2NzI5ODIsImV4cCI6MjA4NzI0ODk4Mn0.1KPq3FBSo5Nn3qNQoHMEMvPBKBa1SYeI72QaUZMXSMc
-const char *supabase_url = "https://zxjwkvepgqfgkajhuyaf.supabase.co";
+// Supabase Credentials
+const char *supabase_url = "https://efenntgldjizgyyttiiw.supabase.co";
 const char *supabase_key =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS"
-    "IsInJlZiI6Inp4andrdmVwZ3FmZ2thamh1eWFmIiwicm9sZSI6ImFub24iLC"
-    "JpYXQiOjE3Njk4OTM0NzUsImV4cCI6MjA4NTQ2OTQ3NX0._"
-    "kYCojqYUn7SrAfausdkgqfirTlYLtj3hdEae2jMmFM";
+    "IsInJlZiI6ImVmZW5udGdsZGppemd5eXR0aWl3Iiwicm9sZSI6ImFub24iLC"
+    "JpYXQiOjE3NzE2NzI5ODIsImV4cCI6MjA4NzI0ODk4Mn0."
+    "1KPq3FBSo5Nn3qNQoHMEMvPBKBa1SYeI72QaUZMXSMc";
 
 #include <time.h>
 
@@ -1592,7 +1589,7 @@ void loop() {
       Serial.println(lastRFIDOperador);
       
       // Lookup na BD (apenas para obter o nome)
-      String nomeOperador = supabaseGenericLookup("operadores", "rfid", lastRFIDOperador, "nome");
+      String nomeOperador = supabaseGenericLookup("operadores", "tag_rfid_operador", lastRFIDOperador, "nome_operador");
       
       if (nomeOperador != "Nao encontrado" && nomeOperador != "Erro: Offline") {
         // Operador encontrado na BD
@@ -1760,7 +1757,7 @@ void loop() {
     Serial.print("[DB-ANDON] Procurando operador com rfid=");
     Serial.println(lastRFIDAndon);
     
-    String nomeOperador = supabaseGenericLookup("operadores", "rfid", lastRFIDAndon, "nome");
+    String nomeOperador = supabaseGenericLookup("operadores", "tag_rfid_operador", lastRFIDAndon, "nome_operador");
     
     if (nomeOperador != "Nao encontrado" && nomeOperador != "Erro: Offline") {
       // Operador encontrado → passa para lista de defeitos

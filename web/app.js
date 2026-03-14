@@ -754,7 +754,7 @@ async function processRfidInput(code) {
 
       setTimeout(async () => {
         if (state.opMode === OP_MODE_IN) {
-          const nomeOperador = await supabaseLookup("operadores", "rfid", code, "nome");
+          const nomeOperador = await supabaseLookup("operadores", "tag_rfid_operador", code, "nome_operador");
 
           if (nomeOperador !== "Nao encontrado" && nomeOperador !== "Erro: Offline") {
             state.operadorFromDatabase = nomeOperador;
@@ -812,7 +812,7 @@ async function processRfidInput(code) {
         console.log("[RFID-ANDON] Cartão lido:", code);
 
         setTimeout(async () => {
-          const nomeOperador = await supabaseLookup("operadores", "rfid", code, "nome");
+          const nomeOperador = await supabaseLookup("operadores", "tag_rfid_operador", code, "nome_operador");
 
           if (nomeOperador !== "Nao encontrado" && nomeOperador !== "Erro: Offline") {
             // Operador encontrado → passa para lista de defeitos
