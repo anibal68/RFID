@@ -231,7 +231,7 @@ function getFormattedTime() {
 
 async function gravarTempoOperador(rfid, ordemFabrico, estado) {
   const tempo = getFormattedTime();
-  const data = { rfid, day_time: tempo, prod_order: ordemFabrico, workstation: state.varA, status: estado };
+  const data = { rfid, day_time: tempo, prod_order: ordemFabrico, workstation: procurarEstacaoPorNome(state.varA || ""), status: estado };
   console.log("[DB] Gravando tempo:", data);
   return await supabaseInsert("data_time_iot", data);
 }
@@ -246,6 +246,7 @@ function onAndonChanged(newValue) {
       operador_rfid: state.lastRFIDAndon || "",
       tipo_alerta: newValue,
       estacao: state.varA || "",
+      estacao_id: procurarEstacaoPorNome(state.varA || ""),
     };
     console.log("[ANDON] Gravando alerta na BD:", alertData);
     supabaseInsert("alertas_andon", alertData).then(ok => {

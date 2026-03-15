@@ -302,6 +302,7 @@ void onAndonChanged(String newValue) {
     doc["operador_rfid"] = lastRFIDAndon;
     doc["tipo_alerta"] = newValue;
     doc["estacao"] = varA;  // Nome da estação
+    doc["estacao_id"] = procurarEstacaoPorNome(varA);  // UUID da estação
     // created_at é preenchido automaticamente pelo Supabase (DEFAULT now())
     
     if (supabaseGenericInsert("alertas_andon", doc)) {
@@ -994,7 +995,7 @@ bool gravarTempoOperador(String rfid, String ordem_fabrico, String estado) {
   doc["rfid"] = rfid;
   doc["day_time"] = tempoAtual;
   doc["prod_order"] = ordem_fabrico;
-  doc["workstation"] = varA;  // Nome da estação
+  doc["workstation"] = procurarEstacaoPorNome(varA);  // UUID da estação
   doc["status"] = estado;  // "in" ou "out"
 
   return supabaseGenericInsert("data_time_iot", doc);
@@ -1031,7 +1032,7 @@ bool gravarTemposOperadores() {
     doc["rfid"] = operadoresNVS[i].rfid;  // RFID do operador
     doc["day_time"] = tempoAtual;
     doc["prod_order"] = varB;  // ordem de produção
-    doc["workstation"] = varA;  // Nome da estação
+    doc["workstation"] = procurarEstacaoPorNome(varA);  // UUID da estação
     doc["status"] = "in";  // Marca como entrada
 
     if (!supabaseGenericInsert("data_time_iot", doc)) {
@@ -1706,7 +1707,7 @@ void loop() {
           doc["rfid"] = lastRFIDOperador;  // RFID do operador
           doc["day_time"] = tempoAtual;
           doc["prod_order"] = "";  // Em branco no registo de operador
-          doc["workstation"] = varA;  // Nome da estação
+          doc["workstation"] = procurarEstacaoPorNome(varA);  // UUID da estação
           doc["status"] = "out";  // Marca como saída
           
           if (supabaseGenericInsert("data_time_iot", doc)) {
