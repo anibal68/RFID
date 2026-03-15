@@ -230,9 +230,9 @@ function getFormattedTime() {
 async function gravarTempoOperador(rfid, ordemFabrico, estado) {
   const estacaoID = procurarEstacaoPorNome(state.varA);
   const tempo = getFormattedTime();
-  const data = { rfid, tempo, ordem_fabrico: ordemFabrico, estacao: estacaoID, estado };
+  const data = { rfid, day_time: tempo, prod_order: ordemFabrico, workstation: estacaoID, status: estado };
   console.log("[DB] Gravando tempo:", data);
-  return await supabaseInsert("tempos", data);
+  return await supabaseInsert("data_time_iot", data);
 }
 
 // ===== ANDON: ROTINA CHAMADA QUANDO VARD MUDA =====

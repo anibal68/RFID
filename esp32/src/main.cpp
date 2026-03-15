@@ -954,7 +954,7 @@ bool supabaseGenericInsert(String table, JsonDocument data) {
   }
 }
 
-// Grava um único operador ou ordem na tabela "tempos"
+// Grava um único operador ou ordem na tabela "data_time_iot"
 bool gravarTempoOperador(String rfid, String ordem_fabrico, String estado) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[DB] Offline - não conseguiu gravar tempo");
@@ -977,15 +977,15 @@ bool gravarTempoOperador(String rfid, String ordem_fabrico, String estado) {
   
   JsonDocument doc;
   doc["rfid"] = rfid;
-  doc["tempo"] = tempoAtual;
-  doc["ordem_fabrico"] = ordem_fabrico;
-  doc["estacao"] = estacaoID;
-  doc["estado"] = estado;  // "in" ou "out"
+  doc["day_time"] = tempoAtual;
+  doc["prod_order"] = ordem_fabrico;
+  doc["workstation"] = estacaoID;
+  doc["status"] = estado;  // "in" ou "out"
 
-  return supabaseGenericInsert("tempos", doc);
+  return supabaseGenericInsert("data_time_iot", doc);
 }
 
-// Grava os operadores atuais na tabela "tempos"
+// Grava os operadores atuais na tabela "data_time_iot"
 bool gravarTemposOperadores() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[DB] Offline - não conseguiu gravar tempos");
@@ -1017,12 +1017,12 @@ bool gravarTemposOperadores() {
   for (int i = 0; i < operadoresCount; i++) {
     JsonDocument doc;
     doc["rfid"] = operadoresNVS[i].rfid;  // RFID do operador
-    doc["tempo"] = tempoAtual;
-    doc["ordem_fabrico"] = varB;  // ordem_fabrico
-    doc["estacao"] = estacaoID;  // ID da estação
-    doc["estado"] = "in";  // Marca como entrada
+    doc["day_time"] = tempoAtual;
+    doc["prod_order"] = varB;  // ordem de produção
+    doc["workstation"] = estacaoID;  // ID da estação
+    doc["status"] = "in";  // Marca como entrada
 
-    if (!supabaseGenericInsert("tempos", doc)) {
+    if (!supabaseGenericInsert("data_time_iot", doc)) {
       allSuccess = false;
     } else {
       Serial.print("[DB] Tempo registado: ");
@@ -1680,12 +1680,12 @@ void loop() {
           
           JsonDocument doc;
           doc["rfid"] = lastRFIDOperador;  // RFID do operador
-          doc["tempo"] = tempoAtual;
-          doc["ordem_fabrico"] = "";  // Em branco no registo de operador
-          doc["estacao"] = estacaoID;  // ID da estação
-          doc["estado"] = "out";  // Marca como saída
+          doc["day_time"] = tempoAtual;
+          doc["prod_order"] = "";  // Em branco no registo de operador
+          doc["workstation"] = estacaoID;  // ID da estação
+          doc["status"] = "out";  // Marca como saída
           
-          if (supabaseGenericInsert("tempos", doc)) {
+          if (supabaseGenericInsert("data_time_iot", doc)) {
             Serial.print("[DB] Tempo OUT registado com sucesso: ");
             Serial.println(lastRFIDOperador);
           } else {

@@ -28,7 +28,7 @@ exports.handler = async () => {
   const operador = process.env.OPERADOR_DEFAULT || "000747";
   const tempo = formattedTime();
   const result = await supabaseInsert({
-    table: "tempos",
+    table: "data_time_iot",
     data: {
       operador,
       tempo,
