@@ -54,6 +54,10 @@ const char *supabase_key =
 
 #include <time.h>
 
+// Forward declarations
+bool supabaseGenericInsert(String table, JsonDocument data);
+String supabaseGenericLookup(String table, String filterCol, String filterVal, String targetCol);
+
 int lastPressed = -1;
 
 long lastActivityTime = 0;
@@ -289,9 +293,22 @@ void initNVS() {
 
 // ===== ANDON: ROTINA CHAMADA QUANDO VARD MUDA =====
 void onAndonChanged(String newValue) {
-  // Placeholder - implementar lógica futura aqui
   Serial.print("[ANDON] VarD mudou para: ");
   Serial.println(newValue);
+  
+  // Grava alerta na tabela alertas_andon
+  if (WiFi.status() == WL_CONNECTED && newValue != "Verde" && newValue.length() > 0) {
+    JsonDocument doc;
+    doc["operador_rfid"] = lastRFIDAndon;
+    doc["tipo_alerta"] = newValue;
+    // created_at é preenchido automaticamente pelo Supabase (DEFAULT now())
+    
+    if (supabaseGenericInsert("alertas_andon", doc)) {
+      Serial.println("[ANDON] Alerta gravado na BD com sucesso");
+    } else {
+      Serial.println("[ANDON] Falha ao gravar alerta na BD");
+    }
+  }
 }
 
 // ===== FUNÇÕES DE PERSISTÊNCIA DE OPERADORES =====
@@ -1124,6 +1141,24 @@ void setup() {
   bool isWakeup = (wakeup_cause != ESP_SLEEP_WAKEUP_UNDEFINED);
 
   initWiFi(isWakeup);
+
+  // Ao acordar, verifica se o alerta Andon foi resolvido
+  if (isWakeup && WiFi.status() == WL_CONNECTED && varD != "Verde" && varD.length() > 0) {
+    Serial.println("[ANDON] Verificando se alerta foi resolvido...");
+    String resolvido = supabaseGenericLookup("alertas_andon", "operador_rfid", lastRFIDAndon, "resolvido");
+    // Também tenta com lookup genérico pelo tipo_alerta atual
+    if (resolvido == "Nao encontrado" || resolvido == "Erro: Offline") {
+      // Tenta procurar pelo tipo_alerta
+      resolvido = supabaseGenericLookup("alertas_andon", "tipo_alerta", varD, "resolvido");
+    }
+    if (resolvido == "TRUE" || resolvido == "true") {
+      Serial.println("[ANDON] Alerta resolvido! Voltando a Verde");
+      updateVariable('D', "Verde");
+    } else {
+      Serial.print("[ANDON] Alerta ainda não resolvido. resolvido=");
+      Serial.println(resolvido);
+    }
+  }
 
   pinMode(BTN1, INPUT_PULLUP);
   pinMode(BTN2, INPUT_PULLUP);

@@ -238,8 +238,23 @@ async function gravarTempoOperador(rfid, ordemFabrico, estado) {
 
 // ===== ANDON: ROTINA CHAMADA QUANDO VARD MUDA =====
 function onAndonChanged(newValue) {
-  // Placeholder - implementar lógica futura aqui
   console.log("[ANDON] VarD mudou para:", newValue);
+  
+  // Grava alerta na tabela alertas_andon
+  if (newValue !== "Verde" && newValue.length > 0) {
+    const alertData = {
+      operador_rfid: state.lastRFIDAndon || "",
+      tipo_alerta: newValue,
+    };
+    console.log("[ANDON] Gravando alerta na BD:", alertData);
+    supabaseInsert("alertas_andon", alertData).then(ok => {
+      if (ok) {
+        console.log("[ANDON] Alerta gravado com sucesso");
+      } else {
+        console.error("[ANDON] Falha ao gravar alerta");
+      }
+    });
+  }
 }
 
 // ===== BLINK HELPER =====
@@ -440,11 +455,23 @@ function goToSleep() {
   console.log("[SLEEP] Display desligado");
 }
 
-function wakeUp() {
+async function wakeUp() {
   state.isSleeping = false;
   state.lastActivityTime = Date.now();
   displayCoverEl.classList.remove("sleeping");
   console.log("[WAKE] Display ligado");
+  
+  // Verifica se o alerta Andon foi resolvido
+  if (state.varD && state.varD !== "Verde") {
+    console.log("[ANDON] Verificando se alerta foi resolvido...");
+    const resolvido = await supabaseLookup("alertas_andon", "tipo_alerta", state.varD, "resolvido");
+    if (resolvido === "TRUE" || resolvido === "true") {
+      console.log("[ANDON] Alerta resolvido! Voltando a Verde");
+      updateVariable("D", "Verde");
+    } else {
+      console.log("[ANDON] Alerta ainda não resolvido. resolvido=", resolvido);
+    }
+  }
 }
 
 // ===== BOTÃO SEL (BTN2 / Enter) =====
