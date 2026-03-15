@@ -1507,10 +1507,10 @@ void loop() {
     // Agora faz o lookup (depois de mostrar "verificar")
     ordLookupPending = false;
     
-    Serial.print("[DB] Procurando na tabela 'barcos' com rfid=");
+    Serial.print("[DB] Procurando na tabela 'ordens_producao' com rfid_token=");
     Serial.println(lastRFIDSuccess);
     
-    String result = supabaseGenericLookup("barcos", "rfid", lastRFIDSuccess, "ordem_fabrico");
+    String result = supabaseGenericLookup("ordens_producao", "rfid_token", lastRFIDSuccess, "display_nome");
     
     if (result != "Nao encontrado" && result != "Erro: Offline") {
       // Ordem encontrada!

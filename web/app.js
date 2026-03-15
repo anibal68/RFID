@@ -719,7 +719,7 @@ async function processRfidInput(code) {
         console.log("[RFID] Cartão lido para Ord:", code);
 
         setTimeout(async () => {
-          const result = await supabaseLookup("barcos", "rfid", code, "ordem_fabrico");
+          const result = await supabaseLookup("ordens_producao", "rfid_token", code, "display_nome");
 
           if (result !== "Nao encontrado" && result !== "Erro: Offline") {
             state.ordFromDatabase = result;
