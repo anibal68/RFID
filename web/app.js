@@ -245,6 +245,7 @@ function onAndonChanged(newValue) {
     const alertData = {
       operador_rfid: state.lastRFIDAndon || "",
       tipo_alerta: newValue,
+      estacao: state.varA || "",
     };
     console.log("[ANDON] Gravando alerta na BD:", alertData);
     supabaseInsert("alertas_andon", alertData).then(ok => {
@@ -462,9 +463,9 @@ async function wakeUp() {
   console.log("[WAKE] Display ligado");
   
   // Verifica se o alerta Andon foi resolvido
-  if (state.varD && state.varD !== "Verde") {
-    console.log("[ANDON] Verificando se alerta foi resolvido...");
-    const resolvido = await supabaseLookup("alertas_andon", "tipo_alerta", state.varD, "resolvido");
+  if (state.varD && state.varD !== "Verde" && state.varA) {
+    console.log("[ANDON] Verificando alerta para estação:", state.varA);
+    const resolvido = await supabaseLookup("alertas_andon", "estacao", state.varA, "resolvido");
     if (resolvido === "TRUE" || resolvido === "true") {
       console.log("[ANDON] Alerta resolvido! Voltando a Verde");
       updateVariable("D", "Verde");

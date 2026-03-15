@@ -301,6 +301,7 @@ void onAndonChanged(String newValue) {
     JsonDocument doc;
     doc["operador_rfid"] = lastRFIDAndon;
     doc["tipo_alerta"] = newValue;
+    doc["estacao"] = varA;  // Nome da estação
     // created_at é preenchido automaticamente pelo Supabase (DEFAULT now())
     
     if (supabaseGenericInsert("alertas_andon", doc)) {
@@ -1143,14 +1144,10 @@ void setup() {
   initWiFi(isWakeup);
 
   // Ao acordar, verifica se o alerta Andon foi resolvido
-  if (isWakeup && WiFi.status() == WL_CONNECTED && varD != "Verde" && varD.length() > 0) {
-    Serial.println("[ANDON] Verificando se alerta foi resolvido...");
-    String resolvido = supabaseGenericLookup("alertas_andon", "operador_rfid", lastRFIDAndon, "resolvido");
-    // Também tenta com lookup genérico pelo tipo_alerta atual
-    if (resolvido == "Nao encontrado" || resolvido == "Erro: Offline") {
-      // Tenta procurar pelo tipo_alerta
-      resolvido = supabaseGenericLookup("alertas_andon", "tipo_alerta", varD, "resolvido");
-    }
+  if (isWakeup && WiFi.status() == WL_CONNECTED && varD != "Verde" && varD.length() > 0 && varA.length() > 0) {
+    Serial.print("[ANDON] Verificando alerta para estação: ");
+    Serial.println(varA);
+    String resolvido = supabaseGenericLookup("alertas_andon", "estacao", varA, "resolvido");
     if (resolvido == "TRUE" || resolvido == "true") {
       Serial.println("[ANDON] Alerta resolvido! Voltando a Verde");
       updateVariable('D', "Verde");
