@@ -1,3 +1,4 @@
+console.log("[DEBUG] estacoes.js INICIO");
 // Lista de estações (réplica de estacoes.h do ESP32) - 115 estações ordenadas alfabeticamente
 const ESTACOES = [
   { id: "4809dd62-cff1-41dd-aaa4-75951dcca0b5", nome: "& - Empaste Big Parts" },

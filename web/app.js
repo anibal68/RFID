@@ -1,3 +1,4 @@
+console.log("[DEBUG] app.js INICIO");
 // ===== RFID Web Simulator - Lógica completa (réplica do ESP32) =====
 
 // ===== ESTADO GLOBAL =====
@@ -42,7 +43,6 @@ const NUM_ANDON_DEFECTS = ANDON_DEFECTS.length;
 const ANDON_NOT_FOUND_DISPLAY_TIME = 1000;  // 1 segundo
 const ANDON_LOOKUP_DELAY = 500;
 
-const NUM_ESTACOES = ESTACOES.length;
 const EDIT_TIMEOUT = 30000;
 const ORD_NOT_FOUND_DISPLAY_TIME = 2000;
 const ORD_LOOKUP_DELAY = 500;
@@ -302,6 +302,7 @@ function beep(frequency, duration) {
 
 // ===== DISPLAY =====
 function drawDisplay() {
+  try {
   // Bateria
   batteryFillEl.style.width = `${state.battery}%`;
 
@@ -326,6 +327,7 @@ function drawDisplay() {
   } else {
     drawMainScreen();
   }
+  } catch(err) { console.error("[DRAW] ERRO:", err); }
 }
 
 function drawMainScreen() {
@@ -969,6 +971,9 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ===== INIT =====
+console.log("[DEBUG] INIT a começar");
 loadNVS();
+console.log("[DEBUG] loadNVS feito, state.varA=", state.varA);
 setInterval(mainLoop, 100);
 drawDisplay();
+console.log("[DEBUG] INIT completo");
