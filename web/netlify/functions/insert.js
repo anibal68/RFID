@@ -16,5 +16,5 @@ exports.handler = async (event) => {
   }
 
   const result = await supabaseInsert({ table, data });
-  return response(200, { ok: result.ok });
+  return response(result.ok ? 200 : 500, { ok: result.ok, error: result.error || null });
 };

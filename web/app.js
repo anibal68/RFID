@@ -208,8 +208,10 @@ async function supabaseInsert(table, data) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ table, data }),
     });
-    if (!res.ok) return false;
     const result = await res.json();
+    if (!result.ok) {
+      console.error("[API] Insert falhou:", result.error || res.status);
+    }
     return result.ok;
   } catch (e) {
     console.error("[API] Insert erro:", e);
@@ -915,8 +917,8 @@ rfidTouch.addEventListener("click", () => {
 manualInputEl.addEventListener("keydown", async (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
-    const code = manualInputEl.value.trim().toLowerCase();
-    if (code && /^[a-z0-9\-_.]+$/.test(code)) {
+    const code = manualInputEl.value.trim();
+    if (code && /^[a-z0-9\-_.]+$/i.test(code)) {
       manualInputEl.value = "";
       await processRfidInput(code);
     }

@@ -56,6 +56,7 @@ async function supabaseLookup({ table, filterCol, filterVal, targetCol }) {
 async function supabaseInsert({ table, data }) {
   const { url, key, configured } = getSupabaseEnv();
   if (!configured) {
+    console.error("[supabaseInsert] ENV not configured");
     return { ok: false };
   }
 
@@ -67,12 +68,20 @@ async function supabaseInsert({ table, data }) {
       headers: {
         ...authHeaders(key),
         "Content-Type": "application/json",
+        "Prefer": "return=minimal",
       },
       body: JSON.stringify(data),
     });
 
-    return { ok: res.status === 201 || res.status === 200 };
-  } catch {
+    if (res.status !== 201 && res.status !== 200) {
+      const body = await res.text();
+      console.error("[supabaseInsert] Error:", res.status, body);
+      return { ok: false, error: body };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    console.error("[supabaseInsert] Exception:", err);
     return { ok: false };
   }
 }
