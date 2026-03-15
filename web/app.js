@@ -346,7 +346,7 @@ function drawEditScreen() {
       line1El.textContent = "Est: " + (state.varA || "---");
     }
   } else if (state.editState === STATE_EDIT_VALUE && state.selectedField === 0) {
-    const estNome = procurarEstacao(state.currentEstacaoIndex + 1);
+    const estNome = procurarEstacaoPorIndice(state.currentEstacaoIndex);
     line1El.textContent = "Est: " + (blink ? estNome : "");
   } else {
     line1El.textContent = "Est: " + (state.varA || "---");
@@ -540,7 +540,7 @@ function handleBtnSel() {
 
   } else if (state.editState === STATE_EDIT_VALUE) {
     if (state.selectedField === 0) {
-      const estNome = procurarEstacao(state.currentEstacaoIndex + 1);
+      const estNome = procurarEstacaoPorIndice(state.currentEstacaoIndex);
       updateVariable("A", estNome);
       state.editState = STATE_NORMAL;
       state.rfidReadingInProgress = false;

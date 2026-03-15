@@ -485,7 +485,7 @@ void drawEditScreen() {
     // Modo edição de Est: pisca o valor
     u8g2.drawStr(0, DISPLAY_LINE1_Y, "Est:");  // Rótulo sempre visível
     if (blink) {
-      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE1_Y, procurarEstacao(currentEstacaoIndex + 1).c_str());  // Pisca
+      u8g2.drawStr(DISPLAY_VALUE_X, DISPLAY_LINE1_Y, estacoes[currentEstacaoIndex].nome.c_str());  // Pisca
     }
   } else {
     // Estado normal ou outro estado
@@ -1271,7 +1271,7 @@ void loop() {
       // Confirmação do valor
       if (selectedField == 0) {
         // Est: confirma valor e sai de edição
-        String estacaoSelecionada = procurarEstacao(currentEstacaoIndex + 1);
+        String estacaoSelecionada = estacoes[currentEstacaoIndex].nome;
         updateVariable('A', estacaoSelecionada);
         editState = STATE_NORMAL;
         rfidReadingInProgress = false;
@@ -1430,7 +1430,7 @@ void loop() {
         currentEstacaoIndex = (currentEstacaoIndex - 1 + NUM_ESTACOES) % NUM_ESTACOES;
         editModeStart = millis();  // Reset timeout
         Serial.print("[EDIT] Estação anterior: ");
-        Serial.println(procurarEstacao(currentEstacaoIndex + 1));
+        Serial.println(estacoes[currentEstacaoIndex].nome);
       } else if (editState == STATE_EDIT_VALUE && selectedField == 1) {
         // Ord: se está em ORD_DISPLAY_CONFIRM, volta a "... a ler"
         if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
@@ -1475,7 +1475,7 @@ void loop() {
         currentEstacaoIndex = (currentEstacaoIndex + 1) % NUM_ESTACOES;
         editModeStart = millis();  // Reset timeout
         Serial.print("[EDIT] Próxima estação: ");
-        Serial.println(procurarEstacao(currentEstacaoIndex + 1));
+        Serial.println(estacoes[currentEstacaoIndex].nome);
       } else if (editState == STATE_EDIT_VALUE && selectedField == 1) {
         // Ord: se está em ORD_DISPLAY_CONFIRM, volta a "... a ler"
         if (ordDisplayMode == ORD_DISPLAY_CONFIRM) {
