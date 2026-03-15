@@ -972,14 +972,11 @@ bool gravarTempoOperador(String rfid, String ordem_fabrico, String estado) {
   strftime(timeStr, sizeof(timeStr), "%d/%m/%y %H:%M", &timeinfo);
   String tempoAtual = String(timeStr);
 
-  // Valida dados obrigatórios
-  int estacaoID = procurarEstacaoPorNome(varA);
-  
   JsonDocument doc;
   doc["rfid"] = rfid;
   doc["day_time"] = tempoAtual;
   doc["prod_order"] = ordem_fabrico;
-  doc["workstation"] = estacaoID;
+  doc["workstation"] = varA;  // Nome da estação
   doc["status"] = estado;  // "in" ou "out"
 
   return supabaseGenericInsert("data_time_iot", doc);
@@ -1004,13 +1001,10 @@ bool gravarTemposOperadores() {
   String tempoAtual = String(timeStr);
 
   // Valida dados obrigatórios
-  int estacaoID = procurarEstacaoPorNome(varA);
   Serial.print("[DB] Validando: varA=");
   Serial.print(varA);
   Serial.print(", varB=");
-  Serial.print(varB);
-  Serial.print(", estacaoID=");
-  Serial.println(estacaoID);
+  Serial.println(varB);
 
   // Grava cada operador na lista NVS atual
   bool allSuccess = true;
@@ -1019,7 +1013,7 @@ bool gravarTemposOperadores() {
     doc["rfid"] = operadoresNVS[i].rfid;  // RFID do operador
     doc["day_time"] = tempoAtual;
     doc["prod_order"] = varB;  // ordem de produção
-    doc["workstation"] = estacaoID;  // ID da estação
+    doc["workstation"] = varA;  // Nome da estação
     doc["status"] = "in";  // Marca como entrada
 
     if (!supabaseGenericInsert("data_time_iot", doc)) {
@@ -1666,8 +1660,6 @@ void loop() {
           strftime(timeStr, sizeof(timeStr), "%d/%m/%y %H:%M", &timeinfo);
           String tempoAtual = String(timeStr);
           
-          int estacaoID = procurarEstacaoPorNome(varA);
-          
           // DEBUG: mostra valores antes de enviar
           Serial.print("[DB-OUT] Valores a enviar: rfid=");
           Serial.print(lastRFIDOperador);
@@ -1676,13 +1668,13 @@ void loop() {
           Serial.print(", barco=");
           Serial.print(varB);
           Serial.print(", estacao=");
-          Serial.println(estacaoID);
+          Serial.println(varA);
           
           JsonDocument doc;
           doc["rfid"] = lastRFIDOperador;  // RFID do operador
           doc["day_time"] = tempoAtual;
           doc["prod_order"] = "";  // Em branco no registo de operador
-          doc["workstation"] = estacaoID;  // ID da estação
+          doc["workstation"] = varA;  // Nome da estação
           doc["status"] = "out";  // Marca como saída
           
           if (supabaseGenericInsert("data_time_iot", doc)) {
